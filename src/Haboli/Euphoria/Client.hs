@@ -21,6 +21,7 @@ module Haboli.Euphoria.Client
   -- ** Exception handling
   , ClientException(..)
   , Haboli.Euphoria.Client.throw
+  , Haboli.Euphoria.Client.catch
   -- ** Euphoria commands
   -- *** Session commands
   , pingReply
@@ -111,8 +112,8 @@ data ClientInfo e = ClientInfo
   }
 
 -- This type declaration feels lispy in its parenthesisness
-newtype Client e a = Client (ReaderT (ClientInfo e)
-                             (ExceptT (ClientException e)
+newtype Client e a = Client (ExceptT (ClientException e)
+                             (ReaderT (ClientInfo e)
                               IO) a)
   deriving (Functor, Applicative, Monad, MonadIO)
 
@@ -208,7 +209,7 @@ runClient details (Client stack)
     wsThreadFinished <- newEmptyMVar
     void $ forkFinally (runWebsocketThread info) (\_ -> putMVar wsThreadFinished ())
     -- Run the actual 'Client' in this thread
-    result <- runExceptT $ runReaderT stack info
+    result <- runReaderT (runExceptT stack) info
     -- Close the connection if it is not already closed, and wait until the
     -- websocket thread stops
     handle ignoreAllExceptions $ WS.sendClose connection $ T.pack "Goodbye :D"
@@ -221,10 +222,10 @@ runClient details (Client stack)
 {- Private operations -}
 
 throwRaw :: ClientException e -> Client e a
-throwRaw e = Client $ lift $ throwE e
+throwRaw = Client . throwE
 
 getClientInfo :: Client e (ClientInfo e)
-getClientInfo = Client ask
+getClientInfo = Client $ lift ask
 
 newPacketId :: Client e T.Text
 newPacketId = do
@@ -327,6 +328,11 @@ respondingToPing holdingEvent = do
 
 throw :: e -> Client e a
 throw = throwRaw . CustomException
+
+catch :: Client e a -> (ClientException e -> Client e a) -> Client e a
+catch c f = Client $ catchE (unclient c) (unclient . f)
+  where
+    unclient (Client m) = m
 
 {- Euphoria commands -}
 

@@ -65,7 +65,6 @@ instance FromJSON Event where
     , EventSnapshot <$> parseJSON v
     ]
 
---TODO: Add more exceptions for other things that can also go wrong (parsing, connection already closed, ...)
 data ClientException e
   = ServerException (Maybe T.Text) (Maybe T.Text)
   -- ^ @'ServerError' error throttled@ is an error sent by the server in
@@ -187,7 +186,6 @@ defaultDetails = ConnectionDetails
   , cdPingInterval = 10
   }
 
---TODO: Close connection after client finishes running if it hasn't already been closed
 runClient :: ConnectionDetails -> Client e a -> IO (Either (ClientException e) a)
 runClient details (Client stack)
   = withSocketsDo
@@ -323,8 +321,6 @@ respondingToPing holdingEvent = do
   pure event
 
 {- Exception handling -}
-
---TODO: Add more commands and find more appropriate names
 
 throw :: e -> Client e a
 throw = throwRaw . CustomException

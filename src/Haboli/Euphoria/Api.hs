@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Haboli.Euphoria.Api
-  (
+  ( ToJSONObject(..)
   -- * Basic types
-    AuthOption(..)
+  , AuthOption(..)
   , Message(..)
   , PersonalAccountView
   , SessionView(..)
@@ -11,34 +11,58 @@ module Haboli.Euphoria.Api
   , UserType(..)
   , UserId(..)
   -- * Asynchronous events
-  , BounceEvent
-  , DisconnectEvent
-  , HelloEvent
-  , JoinEvent
-  , LoginEvent
-  , LogoutEvent
-  , NetworkEvent
-  , NickEvent
-  , EditMessageEvent
-  , PartEvent
-  , PingEvent
-  , PmInitiateEvent
-  , SendEvent
-  , SnapshotEvent
+  , BounceEvent(..)
+  , DisconnectEvent(..)
+  , HelloEvent(..)
+  , JoinEvent(..)
+  , LoginEvent(..)
+  , LogoutEvent(..)
+  , NetworkEvent(..)
+  , NickEvent(..)
+  , EditMessageEvent(..)
+  , PartEvent(..)
+  , PingEvent(..)
+  , PmInitiateEvent(..)
+  , SendEvent(..)
+  , SnapshotEvent(..)
   -- * Session commands
   -- ** auth
-  , AuthCommand
-  , AuthReply
+  , AuthCommand(..)
+  , AuthReply(..)
   -- ** ping
-  , PingCommand
-  , PingReply
+  , PingCommand(..)
+  , PingReply(..)
+  -- * Chat room commands
+  -- ** nick
+  , NickCommand(..)
+  , NickReply(..)
   ) where
 
+import           Control.Monad
 import           Data.Aeson
 import           Data.Aeson.Types
+import qualified Data.HashMap.Strict   as HMap
 import qualified Data.Text             as T
 import           Data.Time
 import           Data.Time.Clock.POSIX
+
+class ToJSONObject a where
+  toJSONObject :: a -> Object
+
+fromPacket :: T.Text -> (Object -> Parser a) -> Value -> Parser a
+fromPacket packetType parser (Object o) = do
+  actualType <- o .: "type"
+  when (actualType /= packetType) $
+    fail $ T.unpack $ "packet type is not " <> packetType
+  packetData <- o .: "data"
+  parser packetData
+fromPacket _ _ v = typeMismatch "Object" v
+
+toPacket :: T.Text -> Value -> Object
+toPacket packetType packetData = HMap.fromList
+  [ "type" .= packetType
+  , "data" .= packetData
+  ]
 
 {- Basic types -}
 
@@ -50,8 +74,8 @@ instance ToJSON AuthOption where
 
 instance FromJSON AuthOption where
   parseJSON (String "passcode") = pure Passcode
-  parseJSON (String _) = fail "invalid value"
-  parseJSON v = typeMismatch "String" v
+  parseJSON (String _)          = fail "invalid value"
+  parseJSON v                   = typeMismatch "String" v
 
 -- | A 'Message' is a node in a room’s log. It corresponds to a chat message, or
 -- a post, or any broadcasted event in a room that should appear in the log. See
@@ -211,6 +235,11 @@ data PingEvent = PingEvent
   , pingNext :: UTCTime
   } deriving (Show)
 
+instance FromJSON PingEvent where
+  parseJSON = fromPacket "ping-event" $ \o -> PingEvent
+    <$> (posixSecondsToUTCTime <$> o .: "time")
+    <*> (posixSecondsToUTCTime <$> o .: "next")
+
 data PmInitiateEvent = PmInitiateEvent
   { pmInitiateFrom     :: UserId
   , pmInitiateFromNick :: T.Text
@@ -222,15 +251,29 @@ data SendEvent = SendEvent
   { sendMessage :: Message
   } deriving (Show)
 
+{- snapshot-event -}
+
 data SnapshotEvent = SnapshotEvent
   { snapshotIdentity     :: UserId
+  , snapshotSessionId    :: T.Text
   , snapshotVersion      :: T.Text
   , snapshotListing      :: [SessionView]
   , snapshotLog          :: [Message]
   , snapshotNick         :: Maybe T.Text
-  , snapshotPmWithNick   :: T.Text
-  , snapshotPmWithUserId :: UserId
+  , snapshotPmWithNick   :: Maybe T.Text
+  , snapshotPmWithUserId :: Maybe UserId
   } deriving (Show)
+
+instance FromJSON SnapshotEvent where
+  parseJSON = fromPacket "snapshot-event" $ \o -> SnapshotEvent
+    <$> o .: "identity"
+    <*> o .: "session_id"
+    <*> o .: "version"
+    <*> o .: "listing"
+    <*> o .: "log"
+    <*> o .:? "nick"
+    <*> o .:? "pm_with_nick"
+    <*> o .:? "pm_with_user_id"
 
 {- Session commands -}
 
@@ -247,8 +290,22 @@ data AuthReply = AuthSuccessful | AuthFailed T.Text
 data PingCommand = PingCommand UTCTime
   deriving (Show)
 
+instance ToJSONObject PingCommand where
+  toJSONObject (PingCommand time) = toPacket "ping-reply" $ object
+    [ "time" .= utcTimeToPOSIXSeconds time
+    ]
+
 data PingReply = PingReply UTCTime
   deriving (Show)
+
+instance ToJSONObject PingReply where
+  toJSONObject (PingReply time) = toPacket "ping-reply" $ object
+    [ "time" .= utcTimeToPOSIXSeconds time
+    ]
+
+instance FromJSON PingReply where
+  parseJSON = fromPacket "ping-reply" $ \o -> PingReply
+    <$> (posixSecondsToUTCTime <$> o .: "time")
 
 {- Chat room commands -}
 
@@ -257,23 +314,22 @@ data PingReply = PingReply UTCTime
 data NickCommand = NickCommand T.Text
   deriving (Show)
 
-instance ToJSON NickCommand where
-  toJSON (NickCommand nick) = object
+instance ToJSONObject NickCommand where
+  toJSONObject (NickCommand nick) = HMap.fromList
     [ "type" .= String "nick"
     , "data" .= object ["name" .= nick]
     ]
 
 data NickReply = NickReply
   { nickReplySessionId :: T.Text
-  , nickReplyId :: UserId
-  , nickReplyFrom :: T.Text
-  , nickReplyTo :: T.Text
+  , nickReplyId        :: UserId
+  , nickReplyFrom      :: T.Text
+  , nickReplyTo        :: T.Text
   } deriving (Show)
 
 instance FromJSON NickReply where
-  parseJSON (Object o) = NickReply
+  parseJSON = fromPacket "nick-reply" $ \o -> NickReply
     <$> o .: "session_id"
     <*> o .: "id"
     <*> o .: "from"
     <*> o .: "to"
-  parseJSON v = typeMismatch "Object" v

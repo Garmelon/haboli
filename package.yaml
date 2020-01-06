@@ -20,6 +20,17 @@ description:         Please see the README on GitHub at <https://github.com/Garm
 
 dependencies:
 - base >= 4.7 && < 5
+- aeson
+- bytestring
+- containers
+- network
+- stm
+- text
+- time
+- transformers
+- unordered-containers
+- websockets
+- wuss
 
 library:
   source-dirs: src

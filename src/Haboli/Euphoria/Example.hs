@@ -9,7 +9,7 @@ import           Haboli.Euphoria.Client
 
 printAllEventsBot :: Client () ()
 printAllEventsBot = forever $ do
-  liftIO $ putStrLn "Waiting for the next event"
+  liftIO $ putStrLn "\nWaiting for the next event...\n"
   liftIO . print =<< respondingToPing nextEvent
 
 setNickAndThenWaitBot :: Client () ()
@@ -24,3 +24,14 @@ throwCustomExceptionBot = throw "Hello world"
 
 immediatelyDisconnectBot :: Client () ()
 immediatelyDisconnectBot = pure ()
+
+sendMessagesUntilThrottledBot :: Client () ()
+sendMessagesUntilThrottledBot = forever $ do
+  event <- respondingToPing nextEvent
+  case event of
+    EventSnapshot _ -> do
+      void $ nick "SpamBot"
+      msg <- send "start thread"
+      void $ fork $ handle (\_ -> reply msg "got throttled") $
+        forever $ reply msg "continue thread"
+    _ -> pure ()

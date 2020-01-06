@@ -5,7 +5,7 @@ module Haboli.Euphoria.Api
   -- * Basic types
   , AuthOption(..)
   , Message(..)
-  , PersonalAccountView
+  , PersonalAccountView(..)
   , SessionView(..)
   , Snowflake
   , UserType(..)
@@ -36,6 +36,9 @@ module Haboli.Euphoria.Api
   -- ** nick
   , NickCommand(..)
   , NickReply(..)
+  -- ** send
+  , SendCommand(..)
+  , SendReply(..)
   ) where
 
 import           Control.Monad
@@ -201,6 +204,10 @@ data JoinEvent = JoinEvent
   { joinSession :: SessionView
   } deriving (Show)
 
+instance FromJSON JoinEvent where
+  parseJSON = fromPacket "join-event" $ \o -> JoinEvent
+    <$> parseJSON (Object o)
+
 data LoginEvent = LoginEvent
   { loginAccountId :: Snowflake
   } deriving (Show)
@@ -230,6 +237,10 @@ data PartEvent = PartEvent
   { partSession :: SessionView
   } deriving (Show)
 
+instance FromJSON PartEvent where
+  parseJSON = fromPacket "part-event" $ \o -> PartEvent
+    <$> parseJSON (Object o)
+
 data PingEvent = PingEvent
   { pingTime :: UTCTime
   , pingNext :: UTCTime
@@ -250,6 +261,10 @@ data PmInitiateEvent = PmInitiateEvent
 data SendEvent = SendEvent
   { sendMessage :: Message
   } deriving (Show)
+
+instance FromJSON SendEvent where
+  parseJSON = fromPacket "send-event" $ \o -> SendEvent
+    <$> parseJSON (Object o)
 
 {- snapshot-event -}
 
@@ -315,9 +330,8 @@ data NickCommand = NickCommand T.Text
   deriving (Show)
 
 instance ToJSONObject NickCommand where
-  toJSONObject (NickCommand nick) = HMap.fromList
-    [ "type" .= String "nick"
-    , "data" .= object ["name" .= nick]
+  toJSONObject (NickCommand nick) = toPacket "nick" $ object
+    [ "name" .= nick
     ]
 
 data NickReply = NickReply
@@ -333,3 +347,21 @@ instance FromJSON NickReply where
     <*> o .: "id"
     <*> o .: "from"
     <*> o .: "to"
+
+{- send -}
+
+data SendCommand = SendCommand T.Text (Maybe Snowflake)
+  deriving (Show)
+
+instance ToJSONObject SendCommand where
+  toJSONObject (SendCommand content Nothing) =
+    toPacket "send" $ object ["content" .= content]
+  toJSONObject (SendCommand content (Just parent)) =
+    toPacket "send" $ object ["content" .= content, "parent" .= parent]
+
+data SendReply = SendReply Message
+  deriving (Show)
+
+instance FromJSON SendReply where
+  parseJSON = fromPacket "send-reply" $ \o -> SendReply
+    <$> parseJSON (Object o)

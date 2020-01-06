@@ -22,11 +22,19 @@ module Haboli.Euphoria.Client
   , ClientException(..)
   , Haboli.Euphoria.Client.throw
   , Haboli.Euphoria.Client.catch
+  , Haboli.Euphoria.Client.handle
+  -- ** Threading
+  , Thread
+  , fork
+  , wait
   -- ** Euphoria commands
   -- *** Session commands
   , pingReply
   -- *** Chat room commands
   , nick
+  , Haboli.Euphoria.Client.send
+  , reply
+  , reply'
   ) where
 
 import           Control.Applicative
@@ -54,14 +62,28 @@ import           Haboli.Euphoria.Api
 
 --TODO: Add all the events
 data Event
-  = EventPing PingEvent
+  = EventBounce BounceEvent
+  | EventDisconnect DisconnectEvent
+  | EventHello HelloEvent
+  | EventJoin JoinEvent
+  | EventLogin LoginEvent
+  | EventLogout LogoutEvent
+  | EventNetwork NetworkEvent
+  | EventNick NickEvent
+  | EventEditMessage EditMessageEvent
+  | EventPart PartEvent
+  | EventPing PingEvent
+  | EventPmInitiate PmInitiateEvent
+  | EventSend SendEvent
   | EventSnapshot SnapshotEvent
-  | PlaceholderEvent --TODO: remove this event
   deriving (Show)
 
 instance FromJSON Event where
   parseJSON v = foldr (<|>) mempty
-    [ EventPing <$> parseJSON v
+    [ EventJoin <$> parseJSON v
+    , EventPart <$> parseJSON v
+    , EventPing <$> parseJSON v
+    , EventSend <$> parseJSON v
     , EventSnapshot <$> parseJSON v
     ]
 
@@ -74,6 +96,9 @@ data ClientException e
   | StoppedException
   | DecodeException T.Text
   -- ^ At some point during decoding a websocket packet, something went wrong.
+  | UnexpectedException SomeException
+  -- ^ While a forked thread was executed, an unexpected exception was thrown in
+  -- the IO monad.
   | CustomException e
   deriving (Show)
 
@@ -160,10 +185,10 @@ parseAndSendReply msg awaiting = do
 runWebsocketThread :: ClientInfo e -> IO ()
 runWebsocketThread info
   = WS.withPingThread (ciConnection info) pingInterval (pure ())
-  $ handle (cancellingAllReplies info) $ forever
-  $ handle ignoringInvalidMessages $ do
+  $ Control.Exception.handle (cancellingAllReplies info) $ forever
+  $ Control.Exception.handle ignoringInvalidMessages $ do
     msg <- WS.receiveData (ciConnection info)
-    -- print msg
+    print msg
     parseAndSendEvent msg (ciEventChan info)
     parseAndSendReply msg (ciAwaiting info)
   where
@@ -210,7 +235,8 @@ runClient details (Client stack)
     result <- runReaderT (runExceptT stack) info
     -- Close the connection if it is not already closed, and wait until the
     -- websocket thread stops
-    handle ignoreAllExceptions $ WS.sendClose connection $ T.pack "Goodbye :D"
+    Control.Exception.handle ignoreAllExceptions
+      $ WS.sendClose connection $ T.pack "Goodbye :D"
     takeMVar wsThreadFinished
     pure result
   where
@@ -238,7 +264,7 @@ newPacketId = do
 safeSend :: ToJSON a => WS.Connection -> a -> Client e ()
 safeSend connection packet = do
   result <- liftIO
-    $ handle convertToException
+    $ Control.Exception.handle convertToException
     $ Nothing <$ WS.sendTextData connection (encode packet)
   case result of
     Nothing -> pure ()
@@ -280,8 +306,8 @@ sendPacketWithReply packet = do
   case maybeReplyVar of
     Nothing -> throwRaw StoppedException
     Just replyVar -> do
-      reply <- liftIO $ atomically $ readTMVar replyVar
-      case reply of
+      answer <- liftIO $ atomically $ readTMVar replyVar
+      case answer of
         Left e  -> throwRaw e
         Right r -> pure r
 
@@ -298,7 +324,7 @@ getPort = cdPort . ciDetails <$> getClientInfo
 getPath :: Client e String
 getPath = cdPath . ciDetails <$> getClientInfo
 
-{- Special operations -}
+{- Event handling -}
 
 nextEvent :: Client e Event
 nextEvent = do
@@ -330,6 +356,30 @@ catch c f = Client $ catchE (unclient c) (unclient . f)
   where
     unclient (Client m) = m
 
+handle :: (ClientException e -> Client e a) -> Client e a -> Client e a
+handle = flip Haboli.Euphoria.Client.catch
+
+{- Threading -}
+
+data Thread e a = Thread (MVar (Either (ClientException e) a))
+
+fork :: Client e a -> Client e (Thread e a)
+fork (Client f) = do
+  info <- getClientInfo
+  waitVar <- liftIO newEmptyMVar
+  let thread = runReaderT (runExceptT f) info
+      andThen (Left e) = putMVar waitVar $ Left $ UnexpectedException e
+      andThen (Right r) = putMVar waitVar r
+  void $ liftIO $ forkFinally thread andThen
+  pure $ Thread waitVar
+
+wait :: Thread e a -> Client e a
+wait (Thread waitVar) = do
+  result <- liftIO $ readMVar waitVar
+  case result of
+    (Left e)  -> throwRaw e
+    (Right a) -> pure a
+
 {- Euphoria commands -}
 
 {- Session commands -}
@@ -341,5 +391,18 @@ pingReply = void . sendPacket . PingReply
 
 nick :: T.Text -> Client e T.Text
 nick targetNick = do
-  reply <- sendPacketWithReply $ NickCommand targetNick
-  pure $ nickReplyTo reply
+  answer <- sendPacketWithReply $ NickCommand targetNick
+  pure $ nickReplyTo answer
+
+send :: T.Text -> Client e Message
+send content = do
+  (SendReply msg) <- sendPacketWithReply $ SendCommand content Nothing
+  pure msg
+
+reply' :: Snowflake -> T.Text -> Client e Message
+reply' messageId content = do
+  (SendReply msg) <- sendPacketWithReply $ SendCommand content (Just messageId)
+  pure msg
+
+reply :: Message -> T.Text -> Client e Message
+reply = reply' . msgId

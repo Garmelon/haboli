@@ -5,6 +5,8 @@ module Haboli.Euphoria.Example where
 
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Data.Foldable
+import           Haboli.Euphoria.Api
 import           Haboli.Euphoria.Client
 
 printAllEventsBot :: Client () ()
@@ -35,3 +37,26 @@ sendMessagesUntilThrottledBot = forever $ do
       void $ fork $ handle (\_ -> reply msg "got throttled") $
         forever $ reply msg "continue thread"
     _ -> pure ()
+
+sendMessagesThreadedBot :: Client () ()
+sendMessagesThreadedBot = forever $ do
+  event <- respondingToPing nextEvent
+  case event of
+    EventSnapshot _ -> void $ nick "TreeBot"
+    EventSend e ->
+      let msg = sendMessage e
+      in  when (msgContent msg == "!tree") $
+            void $ fork $ buildTree msg
+    _ -> pure ()
+  where
+    buildTree msg = do
+      t1 <- fork $ reply msg "subtree 1"
+      t2 <- fork $ reply msg "subtree 2"
+      subtree1 <- wait t1
+      subtree2 <- wait t2
+      t3 <- fork $ reply subtree1 "subtree 1.1"
+      t4 <- fork $ reply subtree1 "subtree 1.2"
+      t5 <- fork $ reply subtree2 "subtree 2.1"
+      t6 <- fork $ reply subtree2 "subtree 2.2"
+      for_ [t3, t4, t5, t6] wait
+      reply msg "tree done"

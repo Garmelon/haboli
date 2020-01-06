@@ -88,11 +88,9 @@ instance FromJSON Event where
     ]
 
 data ClientException e
-  = ServerException (Maybe T.Text) (Maybe T.Text)
-  -- ^ @'ServerError' error throttled@ is an error sent by the server in
-  -- response to a command. @error@ is a message that appears if a command
-  -- fails. @throttled@ is a message that appears if the client should slow down
-  -- its command rate.
+  = ServerException T.Text
+  -- ^ @'ServerError' error@ is an error sent by the server in response to a
+  -- command. @error@ is a message that appears if a command fails.
   | StoppedException
   | DecodeException T.Text
   -- ^ At some point during decoding a websocket packet, something went wrong.
@@ -103,14 +101,8 @@ data ClientException e
   deriving (Show)
 
 instance FromJSON (ClientException e) where
-  parseJSON (Object o) = do
-    serverError <- o .:? "error"
-    isThrottled <- o .:? "throttled" .!= False
-    throttledReason <- o .:? "throttled_reason"
-    let throttled = if isThrottled then Just (fromMaybe "" throttledReason) else Nothing
-    when (isNothing serverError && isNothing throttled) $
-      fail "there is no error and the client is not throttled"
-    pure $ ServerException serverError throttled
+  parseJSON (Object o) = ServerException
+    <$> o .: "error"
   parseJSON v = typeMismatch "Object" v
 
 -- | This type is used by the websocket thread to send the server's replies to

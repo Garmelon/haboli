@@ -345,7 +345,7 @@ handle = flip Haboli.Euphoria.Client.catch
 newtype Thread e a = Thread (MVar (Either (ClientException e) a))
 
 -- | @'fork' p@ forks a new thread running the 'Client' @p@. To wait for the
--- thread to finish execution and collect the result, use 'wait'.
+-- thread to finish executing and collect the result, use 'wait'.
 fork :: Client e a -> Client e (Thread e a)
 fork (Client f) = do
   info <- getClientInfo
@@ -357,7 +357,9 @@ fork (Client f) = do
   pure $ Thread waitVar
 
 -- | Wait for a thread to finish executing and collect the result. If the thread
--- threw a 'ClientException', that exception is rethrown.
+-- threw a 'ClientException', that exception is rethrown. If the thread threw an
+-- IO exception, that exception is wrapped in an 'UnexpectedException' and
+-- thrown.
 wait :: Thread e a -> Client e a
 wait (Thread waitVar) = do
   result <- liftIO $ readMVar waitVar

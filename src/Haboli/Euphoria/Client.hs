@@ -18,9 +18,9 @@ module Haboli.Euphoria.Client
   , respondingToPing
   -- ** Exception handling
   , ClientException(..)
-  , Haboli.Euphoria.Client.throw
-  , Haboli.Euphoria.Client.catch
-  , Haboli.Euphoria.Client.handle
+  , throw
+  , catch
+  , handle
   -- ** Threading
   , Thread
   , fork
@@ -38,7 +38,7 @@ module Haboli.Euphoria.Client
 import           Control.Applicative
 import           Control.Concurrent
 import           Control.Concurrent.STM
-import           Control.Exception
+import qualified Control.Exception          as E
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class
@@ -98,7 +98,7 @@ newtype Client e a = Client (ExceptT (ClientException e)
 -- 'WS.ConnectionException's in the process.
 safelyCloseConnection :: WS.Connection -> IO ()
 safelyCloseConnection connection =
-  Control.Exception.handle ignoreAllExceptions $
+  E.handle ignoreAllExceptions $
   WS.sendClose connection $ T.pack "Goodbye :D"
   where
     ignoreAllExceptions :: WS.ConnectionException -> IO ()
@@ -111,7 +111,7 @@ closeConnectionOnInvalidMessage connection (WS.ParseException _) =
   safelyCloseConnection connection
 closeConnectionOnInvalidMessage connection (WS.UnicodeException _) =
   safelyCloseConnection connection
-closeConnectionOnInvalidMessage _ e = throwIO e
+closeConnectionOnInvalidMessage _ e = E.throwIO e
 
 -- | An exception handler that stops the client if any sort of
 -- 'WS.ConnectionException' occurs. It does this by setting 'ciStopped' to True
@@ -150,11 +150,11 @@ runWebsocketThread :: ClientInfo e -> IO ()
 runWebsocketThread info =
   WS.withPingThread connection pingInterval (pure ()) $
   -- Stop the client and cancel all replies before this thread finishes
-  Control.Exception.handle (cancelAllReplies info) $
+  E.handle (cancelAllReplies info) $
   forever $
   -- If the client receives an invalidly formatted message, be careful and just
   -- disconnect because something went really wrong
-  Control.Exception.handle (closeConnectionOnInvalidMessage connection) $ do
+  E.handle (closeConnectionOnInvalidMessage connection) $ do
     msg <- WS.receiveData connection
     case decode msg of
       -- If the client receives invalid JSON, also disconnect for the same reason
@@ -312,7 +312,7 @@ data ClientException e
   -- ^ The websocket connection underlying the 'Client' was closed.
   | DecodeException T.Text
   -- ^ At some point during decoding a websocket packet, something went wrong.
-  | UnexpectedException SomeException
+  | UnexpectedException E.SomeException
   -- ^ While a forked thread was executed, an unexpected exception was thrown in
   -- the IO monad.
   | CustomException e
@@ -335,7 +335,7 @@ catch c f = Client $ catchE (unclient c) (unclient . f)
     unclient (Client m) = m
 
 -- | A version of 'catch' with its arguments flipped. It is named after
--- 'Control.Exception.handle'.
+-- 'E.handle'.
 handle :: (ClientException e -> Client e a) -> Client e a -> Client e a
 handle = flip Haboli.Euphoria.Client.catch
 
@@ -408,7 +408,7 @@ newPacketId = do
 safeSend :: ToJSON a => WS.Connection -> a -> Client e ()
 safeSend connection packet = do
   result <- liftIO
-    $ Control.Exception.handle convertToException
+    $ E.handle convertToException
     $ Nothing <$ WS.sendTextData connection (encode packet)
   case result of
     Nothing -> pure ()

@@ -60,69 +60,6 @@ import qualified Wuss                       as WSS
 
 import           Haboli.Euphoria.Api
 
---TODO: Add all the events
-data Event
-  = EventBounce BounceEvent
-  | EventDisconnect DisconnectEvent
-  | EventHello HelloEvent
-  | EventJoin JoinEvent
-  | EventLogin LoginEvent
-  | EventLogout LogoutEvent
-  | EventNetwork NetworkEvent
-  | EventNick NickEvent
-  | EventEditMessage EditMessageEvent
-  | EventPart PartEvent
-  | EventPing PingEvent
-  | EventPmInitiate PmInitiateEvent
-  | EventSend SendEvent
-  | EventSnapshot SnapshotEvent
-  deriving (Show)
-
-instance FromJSON Event where
-  parseJSON v = foldr (<|>) mempty
-    [ EventJoin <$> parseJSON v
-    , EventPart <$> parseJSON v
-    , EventPing <$> parseJSON v
-    , EventSend <$> parseJSON v
-    , EventSnapshot <$> parseJSON v
-    ]
-
-data ClientException e
-  = ServerException T.Text
-  -- ^ @'ServerError' error@ is an error sent by the server in response to a
-  -- command. @error@ is a message that appears if a command fails.
-  | StoppedException
-  | DecodeException T.Text
-  -- ^ At some point during decoding a websocket packet, something went wrong.
-  | UnexpectedException SomeException
-  -- ^ While a forked thread was executed, an unexpected exception was thrown in
-  -- the IO monad.
-  | CustomException e
-  deriving (Show)
-
--- | A server's reply to a command.
-data Reply e r = Reply
-  { replyThrottled :: Maybe T.Text
-  , replyResult :: Either (ClientException e) r
-  }
-  deriving (Show)
-
-instance FromJSON r => FromJSON (Reply e r) where
-  parseJSON v@(Object o) = Reply
-    <$> throttledParser
-    <*> ((Left <$> errorParser) <|> (Right <$> parseJSON v))
-    where
-      throttledParser = do
-        throttled <- o .:? "throttled" .!= False
-        if throttled
-          then Just <$> o .:? "throttled_reason" .!= ""
-          else pure Nothing
-      errorParser = ServerException <$> o .: "error"
-  parseJSON v = typeMismatch "Object" v
-
-emptyReply :: Either (ClientException e) r -> Reply e r
-emptyReply = Reply Nothing
-
 -- | This type represents a @'Reply' e r@ with arbitrary @r@ that has yet to be
 -- received. The @forall@ allows whoever creates the 'AwaitingReply' to decide
 -- on the type of @r@.
@@ -191,6 +128,7 @@ parseAndSendReply msg awaiting = do
     parsePacketId (Object o) = o .: "id"
     parsePacketId v          = typeMismatch "Object" v
 
+--TODO: Decode to 'Value' only once. After that, just apply the parsers.
 runWebsocketThread :: ClientInfo e -> IO ()
 runWebsocketThread info
   = WS.withPingThread (ciConnection info) pingInterval (pure ())
@@ -254,13 +192,143 @@ runClient details (Client stack)
     ignoreAllExceptions :: WS.ConnectionException -> IO ()
     ignoreAllExceptions _ = pure ()
 
-{- Private operations -}
+{- Getters -}
+
+getClientInfo :: Client e (ClientInfo e)
+getClientInfo = Client $ lift ask
+
+getHost :: Client e HostName
+getHost = cdHost . ciDetails <$> getClientInfo
+
+getPort :: Client e PortNumber
+getPort = cdPort . ciDetails <$> getClientInfo
+
+getPath :: Client e String
+getPath = cdPath . ciDetails <$> getClientInfo
+
+{- Event handling -}
+
+data Event
+  = EventBounce BounceEvent
+  | EventDisconnect DisconnectEvent
+  | EventHello HelloEvent
+  | EventJoin JoinEvent
+  | EventLogin LoginEvent
+  | EventLogout LogoutEvent
+  | EventNetwork NetworkEvent
+  | EventNick NickEvent
+  | EventEditMessage EditMessageEvent
+  | EventPart PartEvent
+  | EventPing PingEvent
+  | EventPmInitiate PmInitiateEvent
+  | EventSend SendEvent
+  | EventSnapshot SnapshotEvent
+  deriving (Show)
+
+--TODO: Add all the events
+instance FromJSON Event where
+  parseJSON v = foldr (<|>) mempty
+    [ EventJoin <$> parseJSON v
+    , EventPart <$> parseJSON v
+    , EventPing <$> parseJSON v
+    , EventSend <$> parseJSON v
+    , EventSnapshot <$> parseJSON v
+    ]
+
+nextEvent :: Client e Event
+nextEvent = do
+  info <- getClientInfo
+  exceptionOrEvent <- liftIO $ atomically $ do
+    stopped <- readTVar (ciStopped info)
+    if stopped
+      then pure $ Left StoppedException
+      else Right <$> readTChan (ciEventChan info)
+  case exceptionOrEvent of
+    Left e  -> throwRaw e
+    Right e -> pure e
+
+respondingToPing :: Client e Event -> Client e Event
+respondingToPing holdingEvent = do
+  event <- holdingEvent
+  case event of
+    EventPing e -> pingReply (pingTime e)
+    _           -> pure ()
+  pure event
+
+{- Exception handling -}
+
+data ClientException e
+  = ServerException T.Text
+  -- ^ @'ServerError' error@ is an error sent by the server in response to a
+  -- command. @error@ is a message that appears if a command fails.
+  | StoppedException
+  | DecodeException T.Text
+  -- ^ At some point during decoding a websocket packet, something went wrong.
+  | UnexpectedException SomeException
+  -- ^ While a forked thread was executed, an unexpected exception was thrown in
+  -- the IO monad.
+  | CustomException e
+  deriving (Show)
 
 throwRaw :: ClientException e -> Client e a
 throwRaw = Client . throwE
 
-getClientInfo :: Client e (ClientInfo e)
-getClientInfo = Client $ lift ask
+throw :: e -> Client e a
+throw = throwRaw . CustomException
+
+catch :: Client e a -> (ClientException e -> Client e a) -> Client e a
+catch c f = Client $ catchE (unclient c) (unclient . f)
+  where
+    unclient (Client m) = m
+
+handle :: (ClientException e -> Client e a) -> Client e a -> Client e a
+handle = flip Haboli.Euphoria.Client.catch
+
+{- Threading -}
+
+newtype Thread e a = Thread (MVar (Either (ClientException e) a))
+
+fork :: Client e a -> Client e (Thread e a)
+fork (Client f) = do
+  info <- getClientInfo
+  waitVar <- liftIO newEmptyMVar
+  let thread = runReaderT (runExceptT f) info
+      andThen (Left e)  = putMVar waitVar $ Left $ UnexpectedException e
+      andThen (Right r) = putMVar waitVar r
+  void $ liftIO $ forkFinally thread andThen
+  pure $ Thread waitVar
+
+wait :: Thread e a -> Client e a
+wait (Thread waitVar) = do
+  result <- liftIO $ readMVar waitVar
+  case result of
+    (Left e)  -> throwRaw e
+    (Right a) -> pure a
+
+{- Euphoria commands -}
+
+-- | A server's reply to a command.
+data Reply e r = Reply
+  { replyThrottled :: Maybe T.Text
+  , replyResult :: Either (ClientException e) r
+  }
+  deriving (Show)
+
+instance FromJSON r => FromJSON (Reply e r) where
+  parseJSON v@(Object o) = Reply
+    <$> throttledParser
+    <*> ((Left <$> errorParser) <|> (Right <$> parseJSON v))
+    where
+      throttledParser = do
+        throttled <- o .:? "throttled" .!= False
+        if throttled
+          then Just <$> o .:? "throttled_reason" .!= ""
+          else pure Nothing
+      errorParser = ServerException <$> o .: "error"
+  parseJSON v = typeMismatch "Object" v
+
+emptyReply :: Either (ClientException e) r -> Reply e r
+emptyReply = Reply Nothing
 
 newPacketId :: Client e T.Text
 newPacketId = do
@@ -321,77 +389,6 @@ sendPacketWithReply packet = do
       case replyResult answer of
         Left e  -> throwRaw e
         Right r -> pure r
-
-{- Public operations -}
-
-{- Getters -}
-
-getHost :: Client e HostName
-getHost = cdHost . ciDetails <$> getClientInfo
-
-getPort :: Client e PortNumber
-getPort = cdPort . ciDetails <$> getClientInfo
-
-getPath :: Client e String
-getPath = cdPath . ciDetails <$> getClientInfo
-
-{- Event handling -}
-
-nextEvent :: Client e Event
-nextEvent = do
-  info <- getClientInfo
-  exceptionOrEvent <- liftIO $ atomically $ do
-    stopped <- readTVar (ciStopped info)
-    if stopped
-      then pure $ Left StoppedException
-      else Right <$> readTChan (ciEventChan info)
-  case exceptionOrEvent of
-    Left e  -> throwRaw e
-    Right e -> pure e
-
-respondingToPing :: Client e Event -> Client e Event
-respondingToPing holdingEvent = do
-  event <- holdingEvent
-  case event of
-    EventPing e -> pingReply (pingTime e)
-    _           -> pure ()
-  pure event
-
-{- Exception handling -}
-
-throw :: e -> Client e a
-throw = throwRaw . CustomException
-
-catch :: Client e a -> (ClientException e -> Client e a) -> Client e a
-catch c f = Client $ catchE (unclient c) (unclient . f)
-  where
-    unclient (Client m) = m
-
-handle :: (ClientException e -> Client e a) -> Client e a -> Client e a
-handle = flip Haboli.Euphoria.Client.catch
-
-{- Threading -}
-
-newtype Thread e a = Thread (MVar (Either (ClientException e) a))
-
-fork :: Client e a -> Client e (Thread e a)
-fork (Client f) = do
-  info <- getClientInfo
-  waitVar <- liftIO newEmptyMVar
-  let thread = runReaderT (runExceptT f) info
-      andThen (Left e)  = putMVar waitVar $ Left $ UnexpectedException e
-      andThen (Right r) = putMVar waitVar r
-  void $ liftIO $ forkFinally thread andThen
-  pure $ Thread waitVar
-
-wait :: Thread e a -> Client e a
-wait (Thread waitVar) = do
-  result <- liftIO $ readMVar waitVar
-  case result of
-    (Left e)  -> throwRaw e
-    (Right a) -> pure a
-
-{- Euphoria commands -}
 
 {- Session commands -}
 

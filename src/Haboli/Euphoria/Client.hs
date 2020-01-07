@@ -100,19 +100,34 @@ data ClientException e
   | CustomException e
   deriving (Show)
 
-instance FromJSON (ClientException e) where
-  parseJSON (Object o) = ServerException
-    <$> o .: "error"
+-- | A server's reply to a command.
+data Reply e r = Reply
+  { replyThrottled :: Maybe T.Text
+  , replyResult :: Either (ClientException e) r
+  }
+  deriving (Show)
+
+instance FromJSON r => FromJSON (Reply e r) where
+  parseJSON v@(Object o) = Reply
+    <$> throttledParser
+    <*> ((Left <$> errorParser) <|> (Right <$> parseJSON v))
+    where
+      throttledParser = do
+        throttled <- o .:? "throttled" .!= False
+        if throttled
+          then Just <$> o .:? "throttled_reason" .!= ""
+          else pure Nothing
+      errorParser = ServerException <$> o .: "error"
   parseJSON v = typeMismatch "Object" v
 
--- | This type is used by the websocket thread to send the server's replies to
--- the client. Since exceptions like a 'ServerError' may occur, they are
--- explicitly included in the type stored in the 'MVar'.
---
--- The fancy types are there so I don't have to explicitly specify the response
--- in some sum type or similar.
+emptyReply :: Either (ClientException e) r -> Reply e r
+emptyReply = Reply Nothing
+
+-- | This type represents a @'Reply' e r@ with arbitrary @r@ that has yet to be
+-- received. The @forall@ allows whoever creates the 'AwaitingReply' to decide
+-- on the type of @r@.
 data AwaitingReply e
-  = forall r. FromJSON r => AwaitingReply (TMVar (Either (ClientException e) r))
+  = forall r. FromJSON r => AwaitingReply (TMVar (Reply e r))
 
 -- | A 'Map.Map' of empty 'TMVar's waiting for their respective reply packet
 -- from the server.
@@ -152,7 +167,7 @@ cancellingAllReplies info _ = atomically $ do
   -- Cancel all replies
   replyMap <- readTVar (ciAwaiting info)
   for_ replyMap $ \(AwaitingReply v) ->
-    putTMVar v (Left StoppedException)
+    putTMVar v $ emptyReply $ Left StoppedException
 
 parseAndSendEvent :: BS.ByteString -> TChan Event -> IO ()
 parseAndSendEvent msg eventChan =
@@ -165,11 +180,13 @@ parseAndSendReply msg awaiting = do
   for_ maybePacketId $ \packetId -> atomically $ do
     awaitingMap <- readTVar awaiting
     for_ (awaitingMap Map.!? packetId) $ \(AwaitingReply replyVar) -> do
-      let maybeExceptionOrReply = (Left <$> decode msg) <|> (Right <$> decode msg)
-          invalidStructureException = Left $ DecodeException "invalid message json structure"
-      putTMVar replyVar $ fromMaybe invalidStructureException maybeExceptionOrReply
+      putTMVar replyVar $ fromMaybe invalidStructureException $ decode msg
       modifyTVar awaiting $ Map.delete packetId
   where
+    invalidStructureException :: Reply e r
+    invalidStructureException =
+      emptyReply $ Left $ DecodeException "invalid message json structure"
+
     parsePacketId :: Value -> Parser T.Text
     parsePacketId (Object o) = o .: "id"
     parsePacketId v          = typeMismatch "Object" v
@@ -189,10 +206,11 @@ runWebsocketThread info
 {- Running the Client monad -}
 
 data ConnectionDetails = ConnectionDetails
-  { cdHost         :: HostName
-  , cdPort         :: PortNumber
-  , cdPath         :: String
-  , cdPingInterval :: Int
+  { cdHost          :: HostName
+  , cdPort          :: PortNumber
+  , cdPath          :: String
+  , cdPingInterval  :: Int
+  , cdThrottleDelay :: Float -- in seconds
   } deriving (Show)
 
 defaultDetails :: ConnectionDetails
@@ -201,6 +219,7 @@ defaultDetails = ConnectionDetails
   , cdPort = 443
   , cdPath = "/room/test/ws"
   , cdPingInterval = 10
+  , cdThrottleDelay = 1.0
   }
 
 runClient :: ConnectionDetails -> Client e a -> IO (Either (ClientException e) a)
@@ -299,7 +318,7 @@ sendPacketWithReply packet = do
     Nothing -> throwRaw StoppedException
     Just replyVar -> do
       answer <- liftIO $ atomically $ readTMVar replyVar
-      case answer of
+      case replyResult answer of
         Left e  -> throwRaw e
         Right r -> pure r
 
@@ -353,14 +372,14 @@ handle = flip Haboli.Euphoria.Client.catch
 
 {- Threading -}
 
-data Thread e a = Thread (MVar (Either (ClientException e) a))
+newtype Thread e a = Thread (MVar (Either (ClientException e) a))
 
 fork :: Client e a -> Client e (Thread e a)
 fork (Client f) = do
   info <- getClientInfo
   waitVar <- liftIO newEmptyMVar
   let thread = runReaderT (runExceptT f) info
-      andThen (Left e) = putMVar waitVar $ Left $ UnexpectedException e
+      andThen (Left e)  = putMVar waitVar $ Left $ UnexpectedException e
       andThen (Right r) = putMVar waitVar r
   void $ liftIO $ forkFinally thread andThen
   pure $ Thread waitVar

@@ -8,9 +8,10 @@ module Haboli.Euphoria.Client
   -- * The Client monad
     Client
   , runClient
-  , ConnectionDetails(..)
-  , defaultDetails
-  , getConnectionDetails
+  , ConnectionConfig(..)
+  , defaultConfig
+  , withRoom
+  , getConnectionConfig
   -- ** Event handling
   , Event(..)
   , nextEvent
@@ -67,7 +68,7 @@ data AwaitingReply e
 type AwaitingReplies e = Map.Map T.Text (AwaitingReply e)
 
 data ClientInfo e = ClientInfo
-  { ciDetails    :: ConnectionDetails
+  { ciDetails    :: ConnectionConfig
   , ciConnection :: WS.Connection
   , ciAwaiting   :: TVar (AwaitingReplies e)
   , ciEventChan  :: TChan Event
@@ -76,6 +77,16 @@ data ClientInfo e = ClientInfo
   }
 
 -- This type declaration feels lispy in its parenthesisness
+-- | @'Client' e a@ is the monad in which clients are written. @e@ is the custom
+-- exception type that can be seen in functions like 'catch' or 'runClient'. @a@
+-- is the monad return type.
+--
+-- A value of type @'Client' e a@ can be thought of as an action returning a
+-- value of type @a@ or throwing an exception of type @'ClientException' e@ that
+-- can be executed in a client (which usually has an open websocket connection)
+--
+-- For more information on how a 'Client' is executed, see the documentation of
+-- 'runClient'.
 newtype Client e a = Client (ExceptT (ClientException e)
                              (ReaderT (ClientInfo e)
                               IO) a)
@@ -158,22 +169,41 @@ runWebsocketThread info =
 
 {- Running the Client monad -}
 
-data ConnectionDetails = ConnectionDetails
+-- | Configuration for the websocket connection. The websocket connection always
+-- uses https.
+data ConnectionConfig = ConnectionConfig
   { cdHost         :: HostName
   , cdPort         :: PortNumber
   , cdPath         :: String
   , cdPingInterval :: Int
   } deriving (Show)
 
-defaultDetails :: ConnectionDetails
-defaultDetails = ConnectionDetails
+-- | A default configuration that points the bot to the room @&test@ at
+-- <https://euphoria.io/room/test>.
+defaultConfig :: ConnectionConfig
+defaultConfig = ConnectionConfig
   { cdHost = "euphoria.io"
   , cdPort = 443
   , cdPath = "/room/test/ws"
   , cdPingInterval = 10
   }
 
-runClient :: ConnectionDetails -> Client e a -> IO (Either (ClientException e) a)
+-- | @'withRoom' roomname config@ modifies the 'cdPath' of @config@ to point to
+-- the room @roomname@.
+withRoom :: String -> ConnectionConfig -> ConnectionConfig
+withRoom room config = config{cdPath = "/room/" ++ room ++ "/ws"}
+
+--TODO: Catch IO exceptions that occur when a connection could not be created
+-- | Execute a 'Client'.
+--
+-- The execution is bound to a single websocket connection. Once that connection
+-- closes for any reason, calls to 'nextEvent' or to commands throw a
+-- 'StoppedException'. If the 'Client' finishes executing, the websocket
+-- connection is closed automatically.
+--
+-- At the moment, IO exceptions that occur while creating the websocket
+-- connection are not caught. This will probably change soon.
+runClient :: ConnectionConfig -> Client e a -> IO (Either (ClientException e) a)
 runClient details (Client stack) =
   withSocketsDo $
   WSS.runSecureClient (cdHost details) (cdPort details) (cdPath details) $ \connection -> do
@@ -205,11 +235,15 @@ runClient details (Client stack) =
 getClientInfo :: Client e (ClientInfo e)
 getClientInfo = Client $ lift ask
 
-getConnectionDetails :: Client e ConnectionDetails
-getConnectionDetails = ciDetails <$> getClientInfo
+-- | Get the 'ConnectionConfig' the current websocket connection uses.
+getConnectionConfig :: Client e ConnectionConfig
+getConnectionConfig = ciDetails <$> getClientInfo
 
 {- Event handling -}
 
+-- | This type represents events sent by the server. For more information on the
+-- specific events, see their documentation in "Haboli.Euphoria.Api" or have a
+-- look at <http://api.euphoria.io/#asynchronous-events>.
 data Event
   = EventBounce BounceEvent
   | EventDisconnect DisconnectEvent
@@ -237,6 +271,9 @@ instance FromJSON Event where
     , EventSnapshot <$> parseJSON v
     ]
 
+-- | Retrieve the next event sent by the server. This function blocks until a
+-- new event is available or the connection closes, in which case it will throw
+-- a 'StoppedException'.
 nextEvent :: Client e Event
 nextEvent = do
   info <- getClientInfo
@@ -252,6 +289,10 @@ nextEvent = do
     Left e  -> throwRaw e
     Right e -> pure e
 
+-- | Respond to 'EventPing's according to the documentation (see
+-- <http://api.euphoria.io/#ping-event>). This function is meant to be wrapped
+-- directly around 'nextEvent':
+-- > event <- respondingToPing nextEvent
 respondingToPing :: Client e Event -> Client e Event
 respondingToPing holdingEvent = do
   event <- holdingEvent
@@ -262,25 +303,30 @@ respondingToPing holdingEvent = do
 
 {- Exception handling -}
 
+-- | The type of exceptions in the 'Client' monad.
 data ClientException e
   = ServerException T.Text
-  -- ^ @'ServerError' error@ is an error sent by the server in response to a
-  -- command. @error@ is a message that appears if a command fails.
+  -- ^ The server has sent an error message as a reply to a command. Usually
+  -- this happens if a command is used incorrectly.
   | StoppedException
+  -- ^ The websocket connection underlying the 'Client' was closed.
   | DecodeException T.Text
   -- ^ At some point during decoding a websocket packet, something went wrong.
   | UnexpectedException SomeException
   -- ^ While a forked thread was executed, an unexpected exception was thrown in
   -- the IO monad.
   | CustomException e
+  -- ^ A custom exception was thrown via 'throw'.
   deriving (Show)
 
 throwRaw :: ClientException e -> Client e a
 throwRaw = Client . throwE
 
+-- | Throw a 'CustomException'.
 throw :: e -> Client e a
 throw = throwRaw . CustomException
 
+-- | Catch a 'ClientException'. This method works like 'catchE'.
 catch :: Client e a -> (ClientException e -> Client e a) -> Client e a
 -- The main reason why the 'ExceptT' is wrapped around the 'ReaderT' in the
 -- 'Client' monad is that it makes this function easier to implement
@@ -288,13 +334,18 @@ catch c f = Client $ catchE (unclient c) (unclient . f)
   where
     unclient (Client m) = m
 
+-- | A version of 'catch' with its arguments flipped. It is named after
+-- 'Control.Exception.handle'.
 handle :: (ClientException e -> Client e a) -> Client e a -> Client e a
 handle = flip Haboli.Euphoria.Client.catch
 
 {- Threading -}
 
+-- | This type represents a thread spawned by 'fork'.
 newtype Thread e a = Thread (MVar (Either (ClientException e) a))
 
+-- | @'fork' p@ forks a new thread running the 'Client' @p@. To wait for the
+-- thread to finish execution and collect the result, use 'wait'.
 fork :: Client e a -> Client e (Thread e a)
 fork (Client f) = do
   info <- getClientInfo
@@ -305,6 +356,8 @@ fork (Client f) = do
   void $ liftIO $ forkFinally thread andThen
   pure $ Thread waitVar
 
+-- | Wait for a thread to finish executing and collect the result. If the thread
+-- threw a 'ClientException', that exception is rethrown.
 wait :: Thread e a -> Client e a
 wait (Thread waitVar) = do
   result <- liftIO $ readMVar waitVar
@@ -326,6 +379,9 @@ instance FromJSON r => FromJSON (Reply e r) where
     <$> throttledParser
     <*> ((Left <$> errorParser) <|> (Right <$> parseJSON v))
     where
+      -- I don't know if the API guarantees that there is always a
+      -- "throttled_reason" if the commands are throttled or not. For now, I'm
+      -- trusting the "throttled" boolean more than the "throttled_reason."
       throttledParser = do
         throttled <- o .:? "throttled" .!= False
         if throttled
@@ -399,25 +455,32 @@ sendPacketWithReply packet = do
 
 {- Session commands -}
 
+-- | Send a reply to a 'PingEvent' sent by the server.
 pingReply :: UTCTime -> Client e ()
 pingReply = void . sendPacket . PingReply
 
 {- Chat room commands -}
 
+-- | Change your own nick. Returns the new nick.
 nick :: T.Text -> Client e T.Text
 nick targetNick = do
   answer <- sendPacketWithReply $ NickCommand targetNick
   pure $ nickReplyTo answer
 
+-- | Send a new top-level message. Returns the sent message.
 send :: T.Text -> Client e Message
 send content = do
   (SendReply msg) <- sendPacketWithReply $ SendCommand content Nothing
   pure msg
 
+-- | Reply to a message via its id. Returns the sent message.
 reply' :: Snowflake -> T.Text -> Client e Message
 reply' messageId content = do
   (SendReply msg) <- sendPacketWithReply $ SendCommand content (Just messageId)
   pure msg
 
+-- | Reply to a message. Returns the sent message.
+--
+-- This function is equivalent to @'reply'' . 'msgId'@.
 reply :: Message -> T.Text -> Client e Message
 reply = reply' . msgId

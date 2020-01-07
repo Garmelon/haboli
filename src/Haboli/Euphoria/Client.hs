@@ -10,10 +10,7 @@ module Haboli.Euphoria.Client
   , runClient
   , ConnectionDetails(..)
   , defaultDetails
-  -- ** Getters
-  , getHost
-  , getPort
-  , getPath
+  , getConnectionDetails
   -- ** Event handling
   , Event(..)
   , nextEvent
@@ -48,7 +45,6 @@ import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.Reader
 import           Data.Aeson
 import           Data.Aeson.Types
-import qualified Data.ByteString.Lazy       as BS
 import           Data.Foldable
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe
@@ -87,68 +83,86 @@ newtype Client e a = Client (ExceptT (ClientException e)
 
 {- The websocket listening thread -}
 
---TODO: This could close the ws connection and stop the client instead
--- | An exception handler that ignores messages that could not be decoded
--- properly. It only prints the exceptions via 'putStrLn'.
-ignoringInvalidMessages :: WS.ConnectionException -> IO ()
-ignoringInvalidMessages (WS.ParseException message)   = putStrLn $ "ParseException: " ++ message
-ignoringInvalidMessages (WS.UnicodeException message) = putStrLn $ "UnicodeException: " ++ message
-ignoringInvalidMessages e = throwIO e
+-- | Close a 'WS.Connection', catching and ignoring any
+-- 'WS.ConnectionException's in the process.
+safelyCloseConnection :: WS.Connection -> IO ()
+safelyCloseConnection connection =
+  Control.Exception.handle ignoreAllExceptions $
+  WS.sendClose connection $ T.pack "Goodbye :D"
+  where
+    ignoreAllExceptions :: WS.ConnectionException -> IO ()
+    ignoreAllExceptions _ = pure ()
+
+-- | An exception handler that closes the 'WS.Connection' when it receives an
+-- invalidly formatted message from the server.
+closeConnectionOnInvalidMessage :: WS.Connection -> WS.ConnectionException -> IO ()
+closeConnectionOnInvalidMessage connection (WS.ParseException _) =
+  safelyCloseConnection connection
+closeConnectionOnInvalidMessage connection (WS.UnicodeException _) =
+  safelyCloseConnection connection
+closeConnectionOnInvalidMessage _ e = throwIO e
 
 -- | An exception handler that stops the client if any sort of
 -- 'WS.ConnectionException' occurs. It does this by setting 'ciStopped' to True
 -- and cancelling all 'AwaitingReply'-s in 'ciAwaiting'.
-cancellingAllReplies :: ClientInfo e -> WS.ConnectionException -> IO ()
-cancellingAllReplies info _ = atomically $ do
+cancelAllReplies :: ClientInfo e -> WS.ConnectionException -> IO ()
+cancelAllReplies info _ = atomically $ do
   writeTVar (ciStopped info) True
   -- Cancel all replies
   replyMap <- readTVar (ciAwaiting info)
   for_ replyMap $ \(AwaitingReply v) ->
     putTMVar v $ emptyReply $ Left StoppedException
 
-parseAndSendEvent :: BS.ByteString -> TChan Event -> IO ()
-parseAndSendEvent msg eventChan =
-  for_ (decode msg) $ \event ->
+parseAndSendEvent :: Value -> TChan Event -> IO ()
+parseAndSendEvent v eventChan =
+  for_ (fromJSON v) $ \event ->
     atomically $ writeTChan eventChan event
 
-parseAndSendReply :: BS.ByteString -> TVar (AwaitingReplies e) -> IO ()
-parseAndSendReply msg awaiting = do
-  let maybePacketId = parseMaybe parsePacketId =<< decode msg
+parseAndSendReply :: Value -> TVar (AwaitingReplies e) -> IO ()
+parseAndSendReply v awaiting = do
+  -- Since the client is stopped when the websocket thread finishes, and this
+  -- function is called inside the websocket thread, from the point of view of
+  -- this function, the client is never stopped. Because of that, we don't have
+  -- to check 'ciStopped' because we know the client isn't stopped.
+  let maybePacketId = parseMaybe (parseJSON >=> (.: "id")) v
   for_ maybePacketId $ \packetId -> atomically $ do
     awaitingMap <- readTVar awaiting
     for_ (awaitingMap Map.!? packetId) $ \(AwaitingReply replyVar) -> do
-      putTMVar replyVar $ fromMaybe invalidStructureException $ decode msg
+      putTMVar replyVar $ fromMaybe invalidStructureException $ parseMaybe parseJSON v
       modifyTVar awaiting $ Map.delete packetId
   where
     invalidStructureException :: Reply e r
     invalidStructureException =
       emptyReply $ Left $ DecodeException "invalid message json structure"
 
-    parsePacketId :: Value -> Parser T.Text
-    parsePacketId (Object o) = o .: "id"
-    parsePacketId v          = typeMismatch "Object" v
-
---TODO: Decode to 'Value' only once. After that, just apply the parsers.
 runWebsocketThread :: ClientInfo e -> IO ()
-runWebsocketThread info
-  = WS.withPingThread (ciConnection info) pingInterval (pure ())
-  $ Control.Exception.handle (cancellingAllReplies info) $ forever
-  $ Control.Exception.handle ignoringInvalidMessages $ do
-    msg <- WS.receiveData (ciConnection info)
-    print msg
-    parseAndSendEvent msg (ciEventChan info)
-    parseAndSendReply msg (ciAwaiting info)
+runWebsocketThread info =
+  WS.withPingThread connection pingInterval (pure ()) $
+  -- Stop the client and cancel all replies before this thread finishes
+  Control.Exception.handle (cancelAllReplies info) $
+  forever $
+  -- If the client receives an invalidly formatted message, be careful and just
+  -- disconnect because something went really wrong
+  Control.Exception.handle (closeConnectionOnInvalidMessage connection) $ do
+    msg <- WS.receiveData connection
+    case decode msg of
+      -- If the client receives invalid JSON, also disconnect for the same reason
+      -- as above
+      Nothing -> safelyCloseConnection connection
+      Just value -> do
+        parseAndSendEvent value (ciEventChan info)
+        parseAndSendReply value (ciAwaiting info)
   where
+    connection = ciConnection info
     pingInterval = cdPingInterval $ ciDetails info
 
 {- Running the Client monad -}
 
 data ConnectionDetails = ConnectionDetails
-  { cdHost          :: HostName
-  , cdPort          :: PortNumber
-  , cdPath          :: String
-  , cdPingInterval  :: Int
-  , cdThrottleDelay :: Float -- in seconds
+  { cdHost         :: HostName
+  , cdPort         :: PortNumber
+  , cdPath         :: String
+  , cdPingInterval :: Int
   } deriving (Show)
 
 defaultDetails :: ConnectionDetails
@@ -157,14 +171,12 @@ defaultDetails = ConnectionDetails
   , cdPort = 443
   , cdPath = "/room/test/ws"
   , cdPingInterval = 10
-  , cdThrottleDelay = 1.0
   }
 
 runClient :: ConnectionDetails -> Client e a -> IO (Either (ClientException e) a)
-runClient details (Client stack)
-  = withSocketsDo
-  $ WSS.runSecureClient (cdHost details) (cdPort details) (cdPath details)
-  $ \connection -> do
+runClient details (Client stack) =
+  withSocketsDo $
+  WSS.runSecureClient (cdHost details) (cdPort details) (cdPath details) $ \connection -> do
     awaiting <- newTVarIO Map.empty
     eventChan <- newTChanIO
     packetId <- newTVarIO 0
@@ -179,32 +191,22 @@ runClient details (Client stack)
           }
     -- Start the websocket thread, which will notify this thread when it stops
     wsThreadFinished <- newEmptyMVar
-    void $ forkFinally (runWebsocketThread info) (\_ -> putMVar wsThreadFinished ())
+    void $
+      forkFinally (runWebsocketThread info) (\_ -> putMVar wsThreadFinished ())
     -- Run the actual 'Client' in this thread
     result <- runReaderT (runExceptT stack) info
-    -- Close the connection if it is not already closed, and wait until the
-    -- websocket thread stops
-    Control.Exception.handle ignoreAllExceptions
-      $ WS.sendClose connection $ T.pack "Goodbye :D"
+    -- Close the connection and wait until the websocket thread stops
+    safelyCloseConnection connection
     takeMVar wsThreadFinished
     pure result
-  where
-    ignoreAllExceptions :: WS.ConnectionException -> IO ()
-    ignoreAllExceptions _ = pure ()
 
 {- Getters -}
 
 getClientInfo :: Client e (ClientInfo e)
 getClientInfo = Client $ lift ask
 
-getHost :: Client e HostName
-getHost = cdHost . ciDetails <$> getClientInfo
-
-getPort :: Client e PortNumber
-getPort = cdPort . ciDetails <$> getClientInfo
-
-getPath :: Client e String
-getPath = cdPath . ciDetails <$> getClientInfo
+getConnectionDetails :: Client e ConnectionDetails
+getConnectionDetails = ciDetails <$> getClientInfo
 
 {- Event handling -}
 
@@ -235,6 +237,8 @@ instance FromJSON Event where
     , EventSnapshot <$> parseJSON v
     ]
 
+--TODO: Check if this would block infinitely if the client is stopped while this
+-- waits for an event
 nextEvent :: Client e Event
 nextEvent = do
   info <- getClientInfo
@@ -277,6 +281,8 @@ throw :: e -> Client e a
 throw = throwRaw . CustomException
 
 catch :: Client e a -> (ClientException e -> Client e a) -> Client e a
+-- The main reason why the 'ExceptT' is wrapped around the 'ReaderT' in the
+-- 'Client' monad is that it makes this function easier to implement
 catch c f = Client $ catchE (unclient c) (unclient . f)
   where
     unclient (Client m) = m
@@ -310,7 +316,7 @@ wait (Thread waitVar) = do
 -- | A server's reply to a command.
 data Reply e r = Reply
   { replyThrottled :: Maybe T.Text
-  , replyResult :: Either (ClientException e) r
+  , replyResult    :: Either (ClientException e) r
   }
   deriving (Show)
 

@@ -237,11 +237,12 @@ instance FromJSON Event where
     , EventSnapshot <$> parseJSON v
     ]
 
---TODO: Check if this would block infinitely if the client is stopped while this
--- waits for an event
 nextEvent :: Client e Event
 nextEvent = do
   info <- getClientInfo
+  -- This appears to stop correctly when 'ciStopped' is set to True, even if
+  -- that happens from a different thread while this thread is waiting for the
+  -- event channel.
   exceptionOrEvent <- liftIO $ atomically $ do
     stopped <- readTVar (ciStopped info)
     if stopped

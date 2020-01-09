@@ -3,6 +3,7 @@
 -- | This module contains a few basic example bots.
 module Haboli.Euphoria.Example where
 
+import           Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Foldable
@@ -60,3 +61,15 @@ sendMessagesThreadedBot = forever $ do
       t6 <- fork $ reply subtree2 "subtree 2.2"
       for_ [t3, t4, t5, t6] wait
       reply msg "tree done"
+
+cloneItselfBot :: Client () ()
+cloneItselfBot = forever $ do
+  event <- respondingToPing nextEvent
+  case event of
+    EventSnapshot _ -> void $ nick "CloneBot"
+    EventSend e
+      | msgContent (sendMessage e) == "!clone" -> do
+        config <- getConnectionConfig
+        void $ liftIO $ forkIO $ void $ runClient config cloneItselfBot
+      | otherwise -> pure ()
+    _ -> pure ()

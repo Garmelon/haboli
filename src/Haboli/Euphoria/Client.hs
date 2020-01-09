@@ -172,33 +172,33 @@ runWebsocketThread info =
         parseAndSendReply value (ciAwaiting info)
   where
     connection = ciConnection info
-    pingInterval = cdPingInterval $ ciDetails info
+    pingInterval = confPingInterval $ ciDetails info
 
 {- Running the Client monad -}
 
 -- | Configuration for the websocket connection. The websocket connection always
 -- uses https.
 data ConnectionConfig = ConnectionConfig
-  { cdHost         :: S.HostName
-  , cdPort         :: S.PortNumber
-  , cdPath         :: String
-  , cdPingInterval :: Int
+  { confHost         :: S.HostName
+  , confPort         :: S.PortNumber
+  , confPath         :: String
+  , confPingInterval :: Int
   } deriving (Show)
 
 -- | A default configuration that points the bot to the room @&test@ at
 -- <https://euphoria.io/room/test>.
 defaultConfig :: ConnectionConfig
 defaultConfig = ConnectionConfig
-  { cdHost = "euphoria.io"
-  , cdPort = 443
-  , cdPath = "/room/test/ws"
-  , cdPingInterval = 10
+  { confHost = "euphoria.io"
+  , confPort = 443
+  , confPath = "/room/test/ws"
+  , confPingInterval = 10
   }
 
 -- | @'withRoom' roomname config@ modifies the 'cdPath' of @config@ to point to
 -- the room @roomname@.
 withRoom :: String -> ConnectionConfig -> ConnectionConfig
-withRoom room config = config{cdPath = "/room/" ++ room ++ "/ws"}
+withRoom room config = config{confPath = "/room/" ++ room ++ "/ws"}
 
 --TODO: Catch IO exceptions that occur when a connection could not be created
 -- | Execute a 'Client'.
@@ -213,7 +213,7 @@ withRoom room config = config{cdPath = "/room/" ++ room ++ "/ws"}
 runClient :: ConnectionConfig -> Client e a -> IO (Either (ClientException e) a)
 runClient details (Client stack) =
   S.withSocketsDo $
-  WSS.runSecureClient (cdHost details) (cdPort details) (cdPath details) $ \connection -> do
+  WSS.runSecureClient (confHost details) (confPort details) (confPath details) $ \connection -> do
     awaiting <- newTVarIO Map.empty
     eventChan <- newTChanIO
     packetId <- newTVarIO 0

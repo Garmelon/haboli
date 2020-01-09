@@ -1,7 +1,7 @@
 name:                haboli
 version:             0.1.0.0
 github:              "Garmelon/haboli"
-license:             BSD3
+license:             MIT
 author:              "Garmelon"
 maintainer:          "joscha@plugh.de"
 copyright:           "2020 Garmelon"

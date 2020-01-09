@@ -27,12 +27,19 @@ module Haboli.Euphoria.Client
   , wait
   -- ** Euphoria commands
   -- *** Session commands
+  , auth
+  , ping
   , pingReply
   -- *** Chat room commands
+  , getMessage
+  , getLog
+  , getLogBefore
   , nick
-  , Haboli.Euphoria.Client.send
+  , initiatePm
+  , send
   , reply
   , reply'
+  , who
   ) where
 
 import           Control.Applicative
@@ -51,7 +58,7 @@ import qualified Data.Map.Strict            as Map
 import           Data.Maybe
 import qualified Data.Text                  as T
 import           Data.Time
-import           Network.Socket
+import qualified Network.Socket             as S
 import qualified Network.WebSockets         as WS
 import qualified Wuss                       as WSS
 
@@ -172,8 +179,8 @@ runWebsocketThread info =
 -- | Configuration for the websocket connection. The websocket connection always
 -- uses https.
 data ConnectionConfig = ConnectionConfig
-  { cdHost         :: HostName
-  , cdPort         :: PortNumber
+  { cdHost         :: S.HostName
+  , cdPort         :: S.PortNumber
   , cdPath         :: String
   , cdPingInterval :: Int
   } deriving (Show)
@@ -205,7 +212,7 @@ withRoom room config = config{cdPath = "/room/" ++ room ++ "/ws"}
 -- connection are not caught. This will probably change soon.
 runClient :: ConnectionConfig -> Client e a -> IO (Either (ClientException e) a)
 runClient details (Client stack) =
-  withSocketsDo $
+  S.withSocketsDo $
   WSS.runSecureClient (cdHost details) (cdPort details) (cdPath details) $ \connection -> do
     awaiting <- newTVarIO Map.empty
     eventChan <- newTChanIO
@@ -457,22 +464,67 @@ sendPacketWithReply packet = do
 
 {- Session commands -}
 
+-- | Try to authenticate with a password and return the error reason if it
+-- *doesn't* succeed.
+auth :: T.Text -> Client e (Either T.Text ())
+auth password = do
+  answer <- sendPacketWithReply $ AuthWithPasscode password
+  pure $ case answer of
+    AuthSuccessful    -> Right ()
+    AuthFailed reason -> Left reason
+
+-- | Send a ping (not a websocket ping) to the server, who has to reply with the
+-- same time stamp.
+ping :: UTCTime -> Client e UTCTime
+ping time = do
+  PingReply time' <- sendPacketWithReply $ PingCommand time
+  pure time'
+
 -- | Send a reply to a 'PingEvent' sent by the server.
 pingReply :: UTCTime -> Client e ()
 pingReply = void . sendPacket . PingReply
 
 {- Chat room commands -}
 
--- | Change your own nick. Returns the new nick.
-nick :: T.Text -> Client e T.Text
+-- | Retrieve the full content of a single message in the room.
+getMessage :: Snowflake -> Client e Message
+getMessage mId = do
+  GetMessageReply msg <- sendPacketWithReply $ GetMessageCommand mId
+  pure msg
+
+-- | @'getLog' n@ requests @n@ messages from the room's log, starting with the
+-- latest message and going backwards by the send time/message id.
+getLog :: Int -> Client e [Message]
+getLog n = do
+  LogReply msgs _ <- sendPacketWithReply $ LogCommand n Nothing
+  pure msgs
+
+-- | @'getLogBefore' n before@ works similar to @'getLog' n@, but it requests
+-- messages starting with the latest message before the message with id
+-- @before@.
+getLogBefore :: Int -> Snowflake -> Client e [Message]
+getLogBefore n before = do
+  LogReply msgs _ <- sendPacketWithReply $ LogCommand n (Just before)
+  pure msgs
+
+-- | Initiate a PM with another user. Returns a tuple @(pmId, toNick)@, where
+-- @pmId@ is the id of the PM room, and @toNick@ is the nick of the user the
+-- request was sent to.
+initiatePm :: UserId -> Client e (Snowflake, T.Text)
+initiatePm uId = do
+  PmInitiateReply pmId toNick <- sendPacketWithReply $ PmInitiateCommand uId
+  pure (pmId, toNick)
+
+-- | Change your own nick. Returns a tuple @(oldNick, newNick)@.
+nick :: T.Text -> Client e (T.Text, T.Text)
 nick targetNick = do
   answer <- sendPacketWithReply $ NickCommand targetNick
-  pure $ nickReplyTo answer
+  pure (nickReplyFrom answer, nickReplyTo answer)
 
 -- | Send a new top-level message. Returns the sent message.
 send :: T.Text -> Client e Message
 send content = do
-  (SendReply msg) <- sendPacketWithReply $ SendCommand content Nothing
+  SendReply msg <- sendPacketWithReply $ SendCommand content Nothing
   pure msg
 
 -- | Reply to a message via its id. Returns the sent message.
@@ -486,3 +538,9 @@ reply' messageId content = do
 -- This function is equivalent to @'reply'' . 'msgId'@.
 reply :: Message -> T.Text -> Client e Message
 reply = reply' . msgId
+
+-- | See who is currently connected to the room.
+who :: Client e [SessionView]
+who = do
+  WhoReply sessions <- sendPacketWithReply WhoCommand
+  pure sessions

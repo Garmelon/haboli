@@ -11,19 +11,33 @@ module Haboli.Euphoria.Api
   , UserType(..)
   , UserId(..)
   -- * Asynchronous events
+  -- ** bounce-event
   , BounceEvent(..)
+  -- ** disconnect-event
   , DisconnectEvent(..)
+  -- ** hello-event
   , HelloEvent(..)
+  -- ** join-event
   , JoinEvent(..)
+  -- ** login-event
   , LoginEvent(..)
+  -- ** logout-event
   , LogoutEvent(..)
+  -- ** network-event
   , NetworkEvent(..)
+  -- ** nick-event
   , NickEvent(..)
+  -- ** edit-message-event
   , EditMessageEvent(..)
+  -- ** part-event
   , PartEvent(..)
+  -- ** ping-event
   , PingEvent(..)
+  -- ** pm-initiate-event
   , PmInitiateEvent(..)
+  -- ** send-event
   , SendEvent(..)
+  -- ** snapshot-event
   , SnapshotEvent(..)
   -- * Session commands
   -- ** auth
@@ -33,12 +47,24 @@ module Haboli.Euphoria.Api
   , PingCommand(..)
   , PingReply(..)
   -- * Chat room commands
+  -- ** get-message
+  , GetMessageCommand(..)
+  , GetMessageReply(..)
+  -- ** log
+  , LogCommand(..)
+  , LogReply(..)
   -- ** nick
   , NickCommand(..)
   , NickReply(..)
+  -- ** pm-initiate
+  , PmInitiateCommand(..)
+  , PmInitiateReply(..)
   -- ** send
   , SendCommand(..)
   , SendReply(..)
+  -- ** who
+  , WhoCommand(..)
+  , WhoReply(..)
   ) where
 
 import           Control.Monad
@@ -53,13 +79,12 @@ class ToJSONObject a where
   toJSONObject :: a -> Object
 
 fromPacket :: T.Text -> (Object -> Parser a) -> Value -> Parser a
-fromPacket packetType parser (Object o) = do
+fromPacket packetType parser v = parseJSON v >>= \o -> do
   actualType <- o .: "type"
   when (actualType /= packetType) $
     fail $ T.unpack $ "packet type is not " <> packetType
   packetData <- o .: "data"
   parser packetData
-fromPacket _ _ v = typeMismatch "Object" v
 
 toPacket :: T.Text -> Value -> Object
 toPacket packetType packetData = HMap.fromList
@@ -84,31 +109,30 @@ instance FromJSON AuthOption where
 -- a post, or any broadcasted event in a room that should appear in the log. See
 -- <http://api.euphoria.io/#message>.
 data Message = Message
-  { msgId        :: Snowflake
-  , msgParent    :: Maybe Snowflake
-  -- , msgPreviousEditId  :: Maybe Snowflake
-  , msgTime      :: UTCTime
-  , msgSender    :: SessionView
-  , msgContent   :: T.Text
-  -- , msgEncryptionKeyId :: Maybe T.Text
-  -- , msgEdited          :: Maybe UTCTime
-  , msgDeleted   :: Maybe UTCTime
-  , msgTruncated :: Bool
+  { msgId              :: Snowflake
+  , msgParent          :: Maybe Snowflake
+  , msgPreviousEditId  :: Maybe Snowflake
+  , msgTime            :: UTCTime
+  , msgSender          :: SessionView
+  , msgContent         :: T.Text
+  , msgEncryptionKeyId :: Maybe T.Text
+  , msgEdited          :: Maybe UTCTime
+  , msgDeleted         :: Maybe UTCTime
+  , msgTruncated       :: Bool
   } deriving (Show)
 
 instance FromJSON Message where
-  parseJSON (Object v) = Message
-    <$> v .: "id"
-    <*> v .:? "parent"
-    -- <*> v .:? "previous_edit_id"
-    <*> (posixSecondsToUTCTime <$> v .: "time")
-    <*> v .: "sender"
-    <*> v .: "content"
-    -- <*> v .:? "encryption_key_id"
-    -- <*> v .:? "edited"
-    <*> (fmap posixSecondsToUTCTime <$> v .:? "deleted")
-    <*> v .:? "truncated" .!= False
-  parseJSON v = typeMismatch "Object" v
+  parseJSON v = parseJSON v >>= \o -> Message
+    <$> o .: "id"
+    <*> o .:? "parent"
+    <*> o .:? "previous_edit_id"
+    <*> (posixSecondsToUTCTime <$> o .: "time")
+    <*> o .: "sender"
+    <*> o .: "content"
+    <*> o .:? "encryption_key_id"
+    <*> o .:? "edited"
+    <*> (fmap posixSecondsToUTCTime <$> o .:? "deleted")
+    <*> o .:? "truncated" .!= False
 
 data PersonalAccountView = PersonalAccountView
   { pavId    :: Snowflake
@@ -116,32 +140,37 @@ data PersonalAccountView = PersonalAccountView
   , pavEmail :: T.Text
   } deriving (Show)
 
+instance FromJSON PersonalAccountView where
+  parseJSON v = parseJSON v >>= \o -> PersonalAccountView
+    <$> o .: "id"
+    <*> o .: "name"
+    <*> o .: "email"
+
 -- | A 'SessionView' describes a session and its identity. See
 -- <http://api.euphoria.io/#sessionview>.
 data SessionView = SessionView
-  { svId        :: UserId
-  , svNick      :: T.Text
-  , svServerId  :: T.Text
-  , svServerEra :: T.Text
-  , svSessionId :: T.Text
-  , svIsStaff   :: Bool
-  , svIsManager :: Bool
-  -- , svClientAddress     :: Maybe T.Text
-  -- , svRealClientAddress :: Maybe T.Text
+  { svId                :: UserId
+  , svNick              :: T.Text
+  , svServerId          :: T.Text
+  , svServerEra         :: T.Text
+  , svSessionId         :: T.Text
+  , svIsStaff           :: Bool
+  , svIsManager         :: Bool
+  , svClientAddress     :: Maybe T.Text
+  , svRealClientAddress :: Maybe T.Text
   } deriving (Show)
 
 instance FromJSON SessionView where
-  parseJSON (Object v) = SessionView
-    <$> v .: "id"
-    <*> v .: "name"
-    <*> v .: "server_id"
-    <*> v .: "server_era"
-    <*> v .: "session_id"
-    <*> v .:? "is_staff" .!= False
-    <*> v .:? "is_manager" .!= False
-    -- <*> v .:? "client_address"
-    -- <*> v .:? "real_client_address"
-  parseJSON v = typeMismatch "Object" v
+  parseJSON v = parseJSON v >>= \o -> SessionView
+    <$> o .: "id"
+    <*> o .: "name"
+    <*> o .: "server_id"
+    <*> o .: "server_era"
+    <*> o .: "session_id"
+    <*> o .:? "is_staff" .!= False
+    <*> o .:? "is_manager" .!= False
+    <*> o .:? "client_address"
+    <*> o .:? "real_client_address"
 
 -- | A snowflake is a 13-character string, usually used as a unique identifier
 -- for some type of object. It is the base-36 encoding of an unsigned, 64-bit
@@ -170,27 +199,49 @@ data UserId = UserId
   , userSnowflake :: Snowflake
   } deriving (Show, Eq)
 
+instance ToJSON UserId where
+  toJSON uid =
+    let prefix = case userType uid of
+          Agent   -> "agent:"
+          Account -> "account:"
+          Bot     -> "bot:"
+          Other   -> ""
+    in  String $ prefix <> userSnowflake uid
+
 instance FromJSON UserId where
-  parseJSON (String v) = case T.breakOn ":" v of
+  parseJSON v = parseJSON v >>= \s -> case T.breakOn ":" s of
     (snowflake, "")        -> pure $ UserId Other snowflake
     ("agent", snowflake)   -> pure $ UserId Agent   $ T.drop 1 snowflake
     ("account", snowflake) -> pure $ UserId Account $ T.drop 1 snowflake
     ("bot", snowflake)     -> pure $ UserId Bot     $ T.drop 1 snowflake
     _                      -> fail "invalid user id label"
-  parseJSON v = typeMismatch "String" v
 
 {- Asynchronous events -}
+
+{- bounce-event -}
 
 data BounceEvent = BounceEvent
   { bounceReason     :: Maybe T.Text
   , bounceAuthOption :: [AuthOption]
   } deriving (Show)
 
-data DisconnectEvent = DisconnectEvent
+instance FromJSON BounceEvent where
+  parseJSON = fromPacket "bounce-event" $ \o -> BounceEvent
+    <$> o .: "reason"
+    <*> o .: "auth_options"
+
+{- disconnect-event -}
+
+newtype DisconnectEvent = DisconnectEvent
   { disconnectReason :: T.Text
   } deriving (Show)
 
---TODO: Merge the account stuff with the PersonalAccountView?
+instance FromJSON DisconnectEvent where
+  parseJSON = fromPacket "disconnect-evnet" $ \o -> DisconnectEvent
+    <$> o .: "reason"
+
+{- hello-event -}
+
 data HelloEvent = HelloEvent
   { helloAccount              :: Maybe PersonalAccountView
   , helloSessionView          :: SessionView
@@ -200,7 +251,18 @@ data HelloEvent = HelloEvent
   , helloVersion              :: T.Text
   } deriving (Show)
 
-data JoinEvent = JoinEvent
+instance FromJSON HelloEvent where
+  parseJSON = fromPacket "hello-event" $ \o -> HelloEvent
+    <$> o .: "account"
+    <*> o .: "session"
+    <*> o .:? "account_has_access"
+    <*> o .:? "account_email_verified"
+    <*> o .: "room_is_private"
+    <*> o .: "version"
+
+{- join-event -}
+
+newtype JoinEvent = JoinEvent
   { joinSession :: SessionView
   } deriving (Show)
 
@@ -208,18 +270,39 @@ instance FromJSON JoinEvent where
   parseJSON = fromPacket "join-event" $ \o -> JoinEvent
     <$> parseJSON (Object o)
 
-data LoginEvent = LoginEvent
+{- login-event -}
+
+newtype LoginEvent = LoginEvent
   { loginAccountId :: Snowflake
   } deriving (Show)
 
+instance FromJSON LoginEvent where
+  parseJSON = fromPacket "login-event" $ \o -> LoginEvent
+    <$> o .: "acount_id"
+
+{- logout-event -}
+
 data LogoutEvent = LogoutEvent
   deriving (Show)
+
+instance FromJSON LogoutEvent where
+  parseJSON = fromPacket "logout-event" $ const (pure LogoutEvent)
+
+{- network-event -}
 
 data NetworkEvent = NetworkEvent
   { networkType      :: T.Text -- always "partition"
   , networkServerId  :: T.Text
   , networkServerEra :: T.Text
   } deriving (Show)
+
+instance FromJSON NetworkEvent where
+  parseJSON = fromPacket "network-event" $ \o -> NetworkEvent
+    <$> o .: "type"
+    <*> o .: "server_id"
+    <*> o .: "server_era"
+
+{- nick-event -}
 
 data NickEvent = NickEvent
   { nickSessionId :: T.Text
@@ -228,18 +311,36 @@ data NickEvent = NickEvent
   , nickTo        :: T.Text
   } deriving (Show)
 
+instance FromJSON NickEvent where
+  parseJSON = fromPacket "nick-event" $ \o -> NickEvent
+    <$> o .: "session_id"
+    <*> o .: "id"
+    <*> o .: "from"
+    <*> o .: "to"
+
+{- edit-message-event -}
+
 data EditMessageEvent = EditMessageEvent
   { editMessageMessage :: Message
   , editMessageEditId  :: Snowflake
   } deriving (Show)
 
-data PartEvent = PartEvent
+instance FromJSON EditMessageEvent where
+  parseJSON = fromPacket "EditMessageEvent" $ \o -> EditMessageEvent
+    <$> parseJSON (Object o)
+    <*> o .: "edit_id"
+
+{- part-event -}
+
+newtype PartEvent = PartEvent
   { partSession :: SessionView
   } deriving (Show)
 
 instance FromJSON PartEvent where
   parseJSON = fromPacket "part-event" $ \o -> PartEvent
     <$> parseJSON (Object o)
+
+{- ping-event -}
 
 data PingEvent = PingEvent
   { pingTime :: UTCTime
@@ -251,6 +352,8 @@ instance FromJSON PingEvent where
     <$> (posixSecondsToUTCTime <$> o .: "time")
     <*> (posixSecondsToUTCTime <$> o .: "next")
 
+{- pm-initiate-event -}
+
 data PmInitiateEvent = PmInitiateEvent
   { pmInitiateFrom     :: UserId
   , pmInitiateFromNick :: T.Text
@@ -258,7 +361,16 @@ data PmInitiateEvent = PmInitiateEvent
   , pmInitiatePmId     :: Snowflake
   } deriving (Show)
 
-data SendEvent = SendEvent
+instance FromJSON PmInitiateEvent where
+  parseJSON = fromPacket "pm-initiate-event" $ \o -> PmInitiateEvent
+    <$> o .: "from"
+    <*> o .: "from_nick"
+    <*> o .: "from_room"
+    <*> o .: "pm_id"
+
+{- send-event -}
+
+newtype SendEvent = SendEvent
   { sendMessage :: Message
   } deriving (Show)
 
@@ -294,15 +406,30 @@ instance FromJSON SnapshotEvent where
 
 {- auth -}
 
-data AuthCommand = AuthWithPasscode T.Text
+newtype AuthCommand = AuthWithPasscode T.Text
   deriving (Show)
+
+instance ToJSONObject AuthCommand where
+  toJSONObject (AuthWithPasscode password) = toPacket "auth" $ object
+    [ "type" .= Passcode
+    , "passcode" .= password
+    ]
 
 data AuthReply = AuthSuccessful | AuthFailed T.Text
   deriving (Show)
 
+instance FromJSON AuthReply where
+  parseJSON = fromPacket "auth-reply" $ \o -> do
+    success <- o .: "success"
+    if success
+      then pure AuthSuccessful
+      -- The "reason" field *should* be filled in if the authentication fails,
+      -- but I'm always treating it as optional to be on the safe side.
+      else AuthFailed <$> o .:? "reason" .!= ""
+
 {- ping -}
 
-data PingCommand = PingCommand UTCTime
+newtype PingCommand = PingCommand UTCTime
   deriving (Show)
 
 instance ToJSONObject PingCommand where
@@ -310,7 +437,7 @@ instance ToJSONObject PingCommand where
     [ "time" .= utcTimeToPOSIXSeconds time
     ]
 
-data PingReply = PingReply UTCTime
+newtype PingReply = PingReply UTCTime
   deriving (Show)
 
 instance ToJSONObject PingReply where
@@ -324,9 +451,48 @@ instance FromJSON PingReply where
 
 {- Chat room commands -}
 
+{- get-message -}
+
+newtype GetMessageCommand = GetMessageCommand Snowflake
+  deriving (Show)
+
+instance ToJSONObject GetMessageCommand where
+  toJSONObject (GetMessageCommand mId) = toPacket "get-message" $ object
+    [ "id" .= mId
+    ]
+
+newtype GetMessageReply = GetMessageReply Message
+  deriving (Show)
+
+instance FromJSON GetMessageReply where
+  parseJSON = fromPacket "get-message-reply" $ \o -> GetMessageReply
+    <$> parseJSON (Object o)
+
+{- log -}
+
+data LogCommand = LogCommand Int (Maybe Snowflake)
+  deriving (Show)
+
+instance ToJSONObject LogCommand where
+  toJSONObject (LogCommand n Nothing) = toPacket "log" $ object
+    [ "n" .= n
+    ]
+  toJSONObject (LogCommand n (Just before)) = toPacket "log" $ object
+    [ "n" .= n
+    , "before" .= before
+    ]
+
+data LogReply = LogReply [Message] (Maybe Snowflake)
+  deriving (Show)
+
+instance FromJSON LogReply where
+  parseJSON = fromPacket "log-reply" $ \o -> LogReply
+    <$> o .: "log"
+    <*> o .:? "before"
+
 {- nick -}
 
-data NickCommand = NickCommand T.Text
+newtype NickCommand = NickCommand T.Text
   deriving (Show)
 
 instance ToJSONObject NickCommand where
@@ -348,6 +514,24 @@ instance FromJSON NickReply where
     <*> o .: "from"
     <*> o .: "to"
 
+{- pm-initiate -}
+
+newtype PmInitiateCommand = PmInitiateCommand UserId
+  deriving (Show)
+
+instance ToJSONObject PmInitiateCommand where
+  toJSONObject (PmInitiateCommand userId) = toPacket "pm-initiate" $ object
+    [ "user_id" .= userId
+    ]
+
+data PmInitiateReply = PmInitiateReply Snowflake T.Text
+  deriving (Show)
+
+instance FromJSON PmInitiateReply where
+  parseJSON = fromPacket "pm-intiate-reply" $ \o -> PmInitiateReply
+    <$> o .: "pm_id"
+    <*> o .: "to_nick"
+
 {- send -}
 
 data SendCommand = SendCommand T.Text (Maybe Snowflake)
@@ -359,9 +543,24 @@ instance ToJSONObject SendCommand where
   toJSONObject (SendCommand content (Just parent)) =
     toPacket "send" $ object ["content" .= content, "parent" .= parent]
 
-data SendReply = SendReply Message
+newtype SendReply = SendReply Message
   deriving (Show)
 
 instance FromJSON SendReply where
   parseJSON = fromPacket "send-reply" $ \o -> SendReply
     <$> parseJSON (Object o)
+
+{- who -}
+
+data WhoCommand = WhoCommand
+  deriving (Show)
+
+instance ToJSONObject WhoCommand where
+  toJSONObject WhoCommand = toPacket "who" $ object []
+
+newtype WhoReply = WhoReply [SessionView]
+  deriving (Show)
+
+instance FromJSON WhoReply where
+  parseJSON = fromPacket "who-reply" $ \o -> WhoReply
+    <$> o .: "listing"

@@ -227,8 +227,8 @@ data BounceEvent = BounceEvent
 
 instance FromJSON BounceEvent where
   parseJSON = fromPacket "bounce-event" $ \o -> BounceEvent
-    <$> o .: "reason"
-    <*> o .: "auth_options"
+    <$> o .:? "reason"
+    <*> o .:? "auth_options" .!= []
 
 {- disconnect-event -}
 
@@ -253,7 +253,7 @@ data HelloEvent = HelloEvent
 
 instance FromJSON HelloEvent where
   parseJSON = fromPacket "hello-event" $ \o -> HelloEvent
-    <$> o .: "account"
+    <$> o .:? "account"
     <*> o .: "session"
     <*> o .:? "account_has_access"
     <*> o .:? "account_email_verified"

@@ -4,10 +4,15 @@
 **Table of Contents**
 
 - [Changelog for haboli](#changelog-for-haboli)
+    - [0.3.0.0](#0300)
     - [0.2.0.0](#0200)
     - [0.1.0.0](#0100)
 
 <!-- markdown-toc end -->
+
+## 0.3.0.0
+* fix Client not receiving all kinds of server events
+* rename ConnectionConfig record accessors
 
 ## 0.2.0.0
 * add all session and chat room commands

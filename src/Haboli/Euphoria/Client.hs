@@ -271,9 +271,18 @@ data Event
 --TODO: Add all the events
 instance FromJSON Event where
   parseJSON v = foldr (<|>) mempty
-    [ EventJoin <$> parseJSON v
+    [ EventBounce <$> parseJSON v
+    , EventDisconnect <$> parseJSON v
+    , EventHello <$> parseJSON v
+    , EventJoin <$> parseJSON v
+    , EventLogin <$> parseJSON v
+    , EventLogout <$> parseJSON v
+    , EventNetwork <$> parseJSON v
+    , EventNick <$> parseJSON v
+    , EventEditMessage <$> parseJSON v
     , EventPart <$> parseJSON v
     , EventPing <$> parseJSON v
+    , EventPmInitiate <$> parseJSON v
     , EventSend <$> parseJSON v
     , EventSnapshot <$> parseJSON v
     ]

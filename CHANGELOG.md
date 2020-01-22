@@ -1,5 +1,8 @@
 # Changelog for haboli
 
+## upcoming
+* fix nick of example bot in readme
+
 ## 0.3.1.0
 * add `Haboli.Euphoria` module
 * add proper README

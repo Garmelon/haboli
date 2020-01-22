@@ -30,7 +30,7 @@ pingPongBot :: Client () ()
 pingPongBot = forever $ do
   event <- respondingToPing nextEvent
   case event of
-    EventSnapshot _ -> void $ nick "TreeBot"
+    EventSnapshot _ -> void $ nick "PingPongBot"
     EventSend e ->
       let msg = sendMessage e
       in  when (msgContent msg == "!ping") $

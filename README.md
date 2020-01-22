@@ -23,7 +23,7 @@ For more information, see the haddock for the `Haboli.Euphoria.Client` and
 
 ## Example bot
 
-Here is a very basic example bot that Replies to `!ping` with `Pong!`:
+Here is a very basic example bot that replies to `!ping` with `Pong!`:
 
 ```haskell
 pingPongBot :: Client () ()

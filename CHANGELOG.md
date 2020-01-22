@@ -4,11 +4,18 @@
 **Table of Contents**
 
 - [Changelog for haboli](#changelog-for-haboli)
+    - [upcoming](#upcoming)
     - [0.3.0.0](#0300)
     - [0.2.0.0](#0200)
     - [0.1.0.0](#0100)
 
 <!-- markdown-toc end -->
+
+## upcoming
+* add `Haboli.Euphoria` module
+* add proper README
+* clean up package structure
+* update documentation
 
 ## 0.3.0.0
 * fix Client not receiving all kinds of server events

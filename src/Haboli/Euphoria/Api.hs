@@ -77,8 +77,8 @@ import qualified Data.Text             as T
 import           Data.Time
 import           Data.Time.Clock.POSIX
 
--- | A class for all types that can be converted into an 'Data.Aeson.Object'.
--- Similar to 'ToJSON', but more restrictive.
+-- | A class for all types that can be converted into an
+-- 'Data.Aeson.Types.Object'. Similar to 'ToJSON', but more restrictive.
 class ToJSONObject a where
   toJSONObject :: a -> Object
 

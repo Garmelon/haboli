@@ -1,17 +1,6 @@
 # Changelog for haboli
 
-<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
-**Table of Contents**
-
-- [Changelog for haboli](#changelog-for-haboli)
-    - [upcoming](#upcoming)
-    - [0.3.0.0](#0300)
-    - [0.2.0.0](#0200)
-    - [0.1.0.0](#0100)
-
-<!-- markdown-toc end -->
-
-## upcoming
+## 0.3.1.0
 * add `Haboli.Euphoria` module
 * add proper README
 * clean up package structure

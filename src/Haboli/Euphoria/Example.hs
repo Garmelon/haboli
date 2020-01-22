@@ -7,8 +7,7 @@ import           Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Foldable
-import           Haboli.Euphoria.Api
-import           Haboli.Euphoria.Client
+import           Haboli.Euphoria
 
 printAllEventsBot :: Client () ()
 printAllEventsBot = forever $ do

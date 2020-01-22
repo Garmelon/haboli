@@ -3,6 +3,18 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
 
+-- | This library is based around the custom 'Client' monad. It is based on 'IO'
+-- and represents computations that happen while a connection to an euphoria
+-- server is open. Once a 'Client' finishes executing, the connection is
+-- automatically closed. If the connection closes unexpectedly while the
+-- corresponding 'Client' is still running, it is notified and commands like
+-- 'send' or 'nick' will result in an exception. The 'Client' does not
+-- automatically reconnect.
+--
+-- The 'Client' monad supports exceptions via the 'throw', 'catch' and 'handle'
+-- operations, as well as multiple threads via the 'fork' and 'wait' operations.
+-- It supports all session and chat room commands listed in <api.euphoria.io>.
+
 module Haboli.Euphoria.Client
   (
   -- * The Client monad
@@ -64,9 +76,9 @@ import qualified Wuss                       as WSS
 
 import           Haboli.Euphoria.Api
 
--- | This type represents a @'Reply' e r@ with arbitrary @r@ that has yet to be
--- received. The @forall@ allows whoever creates the 'AwaitingReply' to decide
--- on the type of @r@.
+-- | This type represents a @Reply e r@ with arbitrary @r@ that has yet to be
+-- received. The @forall@ allows whoever creates the AwaitingReply to decide on
+-- the type of @r@.
 data AwaitingReply e
   = forall r. FromJSON r => AwaitingReply (TMVar (Reply e r))
 
@@ -121,8 +133,8 @@ closeConnectionOnInvalidMessage connection (WS.UnicodeException _) =
 closeConnectionOnInvalidMessage _ e = E.throwIO e
 
 -- | An exception handler that stops the client if any sort of
--- 'WS.ConnectionException' occurs. It does this by setting 'ciStopped' to True
--- and cancelling all 'AwaitingReply'-s in 'ciAwaiting'.
+-- 'WS.ConnectionException' occurs. It does this by setting ciStopped to True
+-- and cancelling all AwaitingReply-s in ciAwaiting.
 cancelAllReplies :: ClientInfo e -> WS.ConnectionException -> IO ()
 cancelAllReplies info _ = atomically $ do
   writeTVar (ciStopped info) True
@@ -195,8 +207,8 @@ defaultConfig = ConnectionConfig
   , confPingInterval = 10
   }
 
--- | @'withRoom' roomname config@ modifies the 'cdPath' of @config@ to point to
--- the room @roomname@.
+-- | @'withRoom' roomname config@ modifies the 'confPath' of @config@ to point
+-- to the room @roomname@.
 withRoom :: String -> ConnectionConfig -> ConnectionConfig
 withRoom room config = config{confPath = "/room/" ++ room ++ "/ws"}
 

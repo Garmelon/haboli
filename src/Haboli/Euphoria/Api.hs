@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | This module attempts to map the structure of the ephoria API to types.
+
 module Haboli.Euphoria.Api
   ( ToJSONObject(..)
   -- * Basic types
@@ -75,6 +77,8 @@ import qualified Data.Text             as T
 import           Data.Time
 import           Data.Time.Clock.POSIX
 
+-- | A class for all types that can be converted into an 'Data.Aeson.Object'.
+-- Similar to 'ToJSON', but more restrictive.
 class ToJSONObject a where
   toJSONObject :: a -> Object
 
@@ -94,8 +98,9 @@ toPacket packetType packetData = HMap.fromList
 
 {- Basic types -}
 
+-- | A method of authenticating.
 data AuthOption = Passcode
-  deriving (Show)
+  deriving (Show, Eq)
 
 instance ToJSON AuthOption where
   toJSON Passcode = String "passcode"

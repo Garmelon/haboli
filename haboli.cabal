@@ -1,0 +1,53 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 9b4e31fd51c5402b511dfcd2fa3dd52e562b202b1583f6639a0e193920e0d02c
+
+name:           haboli
+version:        0.3.1.0
+synopsis:       API bindings for https://euphoria.io/
+description:    Please see the README on GitHub at <https://github.com/Garmelon/haboli#readme>
+homepage:       https://github.com/Garmelon/haboli#readme
+bug-reports:    https://github.com/Garmelon/haboli/issues
+author:         Garmelon <joscha@plugh.de>
+maintainer:     Garmelon <joscha@plugh.de>
+copyright:      2020 Garmelon
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+    LICENSE
+
+source-repository head
+  type: git
+  location: https://github.com/Garmelon/haboli
+
+library
+  exposed-modules:
+      Haboli.Euphoria
+      Haboli.Euphoria.Api
+      Haboli.Euphoria.Client
+      Haboli.Euphoria.Example
+      Haboli.Euphoria.WegaBorad
+  other-modules:
+      Paths_haboli
+  hs-source-dirs:
+      src
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , containers
+    , network
+    , stm
+    , text
+    , time
+    , transformers
+    , unordered-containers
+    , websockets
+    , wuss
+  default-language: Haskell2010

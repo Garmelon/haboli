@@ -280,7 +280,6 @@ data Event
   | EventSnapshot SnapshotEvent
   deriving (Show)
 
---TODO: Add all the events
 instance FromJSON Event where
   parseJSON v = foldr (<|>) mempty
     [ EventBounce <$> parseJSON v

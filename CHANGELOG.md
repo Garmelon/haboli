@@ -1,6 +1,7 @@
 # Changelog for haboli
 
 ## upcoming
+- add `Haboli.Euphoria.Command` module
 - clean up project
 - fix nick of example bot in readme
 

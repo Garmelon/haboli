@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9b4e31fd51c5402b511dfcd2fa3dd52e562b202b1583f6639a0e193920e0d02c
+-- hash: bcd1c482ca0554443e9e0523bf9eb0cc65354ef37c4aec33570b5ab9a22502bf
 
 name:           haboli
 version:        0.3.1.0
@@ -32,6 +32,7 @@ library
       Haboli.Euphoria
       Haboli.Euphoria.Api
       Haboli.Euphoria.Client
+      Haboli.Euphoria.Command
       Haboli.Euphoria.Example
       Haboli.Euphoria.WegaBorad
   other-modules:

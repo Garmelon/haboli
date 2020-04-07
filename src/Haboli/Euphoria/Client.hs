@@ -317,8 +317,11 @@ nextEvent = do
     Right e -> pure e
 
 -- | Respond to 'EventPing's according to the documentation (see
--- <http://api.euphoria.io/#ping-event>). This function is meant to be wrapped
--- directly around 'nextEvent':
+-- <http://api.euphoria.io/#ping-event>). Passes through all events unmodified.
+--
+-- This utility function is meant to be wrapped directly or indirectly around
+-- 'nextEvent':
+--
 -- > event <- respondingToPing nextEvent
 respondingToPing :: Client e Event -> Client e Event
 respondingToPing holdingEvent = do

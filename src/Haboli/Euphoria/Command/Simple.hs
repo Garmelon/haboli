@@ -1,10 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | General and specific commands as described in the
+-- [botrulez](https://github.com/jedevc/botrulez).
+
 module Haboli.Euphoria.Command.Simple
-  ( cmdGeneral
+  (
+  -- * General commands
+    cmdGeneral
   , cmdGeneral'
+  , cmdGeneralArgs
+  , cmdGeneralArgs'
+  -- * Specific commands
   , cmdSpecific
   , cmdSpecific'
+  , cmdSpecificArgs
+  , cmdSpecificArgs'
   ) where
 
 import           Control.Monad
@@ -39,20 +49,48 @@ pCmdGeneral cmd = pCmd cmd *> space *> pUntilEof
 pCmdSpecific :: T.Text -> T.Text -> Parser T.Text
 pCmdSpecific cmd name = pCmd cmd *> space1 *> pNick name *> space *> pUntilEof
 
-pWithoutArgs :: Parser T.Text -> Parser ()
-pWithoutArgs p = do
-  args <- p
-  guard $ T.null args
-
+-- | @'cmdGeneral' cmd f' is a general command with no arguments in the form of
+-- @!cmd@.
 cmdGeneral :: T.Text -> (Message -> Client e ()) -> Command e
-cmdGeneral cmd f = cmdMega (pWithoutArgs $ pCmdGeneral cmd) $ \msg _ -> f msg
+cmdGeneral cmd f = cmdGeneral' cmd $ \msg -> True <$ f msg
 
-cmdGeneral' :: T.Text -> (Message -> T.Text -> Client e ()) -> Command e
-cmdGeneral' cmd = cmdMega $ pCmdGeneral cmd
+-- | A version of 'cmdGeneral' that allows the command function to decide
+-- whether the command was successful or not.
+cmdGeneral' :: T.Text -> (Message -> Client e Bool) -> Command e
+cmdGeneral' cmd f = cmdGeneralArgs' cmd $ \msg args -> if T.null args
+  then f msg
+  else pure False
 
+-- | @'cmdGeneralArgs' cmd f' is a general command with arguments in the form of
+-- @!cmd args@. @f@ is called with the source message and the arguments as
+-- 'T.Text'.
+cmdGeneralArgs :: T.Text -> (Message -> T.Text -> Client e ()) -> Command e
+cmdGeneralArgs cmd f = cmdGeneralArgs' cmd $ \msg args -> True <$ f msg args
+
+-- | A version of 'cmdGeneralArgs' that allows the command function to decide
+-- whether the command was successful or not.
+cmdGeneralArgs' :: T.Text -> (Message -> T.Text -> Client e Bool) -> Command e
+cmdGeneralArgs' cmd = cmdMega' $ pCmdGeneral cmd
+
+-- | @'cmdSpecific' cmd nick f@ is a specific command with no arguments in the
+-- form of @!cmd \@nick@.
 cmdSpecific :: T.Text -> T.Text -> (Message -> Client e ()) -> Command e
-cmdSpecific cmd name f =
-  cmdMega (pWithoutArgs $ pCmdSpecific cmd name) $ \msg _ -> f msg
+cmdSpecific cmd name f = cmdSpecific' cmd name $ \msg -> True <$ f msg
 
-cmdSpecific' :: T.Text -> T.Text -> (Message -> T.Text -> Client e ()) -> Command e
-cmdSpecific' cmd name = cmdMega $ pCmdSpecific cmd name
+-- | A version of 'cmdSpecific' that allows the command function to decide
+-- whether the command was successful or not.
+cmdSpecific' :: T.Text -> T.Text -> (Message -> Client e Bool) -> Command e
+cmdSpecific' cmd name f = cmdSpecificArgs' cmd name $ \msg args -> if T.null args
+  then f msg
+  else pure False
+
+-- | @'cmdSpecificArgs' cmd nick f@ is a specific command with arguments in the
+-- form of @!cmd \@nick args@. @f@ is called with the source message and the
+-- arguments as 'T.Text'.
+cmdSpecificArgs :: T.Text -> T.Text -> (Message -> T.Text -> Client e ()) -> Command e
+cmdSpecificArgs cmd name f = cmdSpecificArgs' cmd name $ \msg args -> True <$ f msg args
+
+-- | A version of 'cmdSpecificArgs' that allows the command function to decide
+-- whether the command was successful or not.
+cmdSpecificArgs' :: T.Text -> T.Text -> (Message -> T.Text -> Client e Bool) -> Command e
+cmdSpecificArgs' cmd name = cmdMega' $ pCmdSpecific cmd name

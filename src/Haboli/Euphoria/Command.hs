@@ -25,7 +25,7 @@ runCommands (c:cs) msg = do
     then pure True
     else runCommands cs msg
 
--- | @'respondingToCommands' getEvent getCommands@ runs a list of 'Command's on
+-- | @'respondingToCommands' getCommands getEvent@ runs a list of 'Command's on
 -- all 'EventSend's. It passes through all events unmodified.
 --
 -- The @getEvent@ action is used to obtain the next 'Event'. The @getCommands@
@@ -35,9 +35,9 @@ runCommands (c:cs) msg = do
 -- This utility function is meant to be wrapped directly or indirectly around
 -- 'nextEvent':
 --
--- > event <- respondingToCommands nextEvent commands
-respondingToCommands :: Client e Event -> Client e [Command e] -> Client e Event
-respondingToCommands getEvent getCommands = do
+-- > event <- respondingToCommands commands nextEvent
+respondingToCommands :: Client e [Command e] -> Client e Event -> Client e Event
+respondingToCommands getCommands getEvent = do
   event <- getEvent
   commands <- getCommands
   case event of

@@ -10,6 +10,8 @@ module Haboli.Euphoria.ExampleBot
 import           Control.Concurrent
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Data.List
+import qualified Data.Map.Strict          as Map
 import qualified Data.Text                as T
 import           Data.Time
 
@@ -36,7 +38,15 @@ exampleBot mPasswd = do
   botMain stateVar
 
 botMain :: MVar BotState -> Client T.Text ()
-botMain stateVar = forever $ respondingToPing $ respondingToCommands nextEvent $ do
+botMain stateVar = forever $ do
+  event <- respondingToCommands (getCommands stateVar) $
+    respondingToPing nextEvent
+  -- Update the listing
+  liftIO $ modifyMVar_ stateVar $ \state ->
+    pure state{botListing = updateFromEvent event $ botListing state}
+
+getCommands :: MVar BotState -> Client e [Command T.Text]
+getCommands stateVar = do
   state <- liftIO $ readMVar stateVar
   let name = svNick $ self $ botListing state
   pure
@@ -46,11 +56,27 @@ botMain stateVar = forever $ respondingToPing $ respondingToCommands nextEvent $
     , botrulezUptimeSpecific name $ botStartTime state
     , botrulezKillSpecific name
     , cmdSpecific "hug" name $ \msg -> void $ reply msg "/me hugs back"
-    , cmdGeneral "hello" $ \msg ->
-        void $ reply msg $ "Hi there, " <> nickMention (svNick $ msgSender msg) <> "!"
-    , cmdSpecificArgs "nick" name $ \msg args -> do
-        s <- liftIO $ takeMVar stateVar
-        listing' <- preferNick args $ botListing s
-        liftIO $ putMVar stateVar s{botListing = listing'}
-        void $ reply msg "Is this better?"
+    , cmdHello
+    , cmdNick stateVar name
+    , cmdWho stateVar
     ]
+
+cmdHello :: Command e
+cmdHello = cmdGeneral "hello" $ \msg -> do
+  let mention = nickMention $ svNick $ msgSender msg
+  void $ reply msg $ "Hi there, @" <> mention <> "!"
+
+cmdNick :: MVar BotState -> T.Text -> Command e
+cmdNick stateVar name = cmdSpecificArgs "nick" name $ \msg args -> do
+  -- Update the listing while updating the nick
+  state <- liftIO $ takeMVar stateVar
+  listing' <- preferNick args $ botListing state
+  liftIO $ putMVar stateVar state{botListing = listing'}
+  void $ reply msg "Is this better?"
+
+cmdWho :: MVar BotState -> Command e
+cmdWho stateVar = cmdGeneral "who" $ \msg -> do
+  state <- liftIO $ readMVar stateVar
+  let people = others $ botListing state
+      nicks = sort $ map svNick $ Map.elems people
+  void $ reply msg $ T.intercalate "\n" nicks

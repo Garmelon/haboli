@@ -27,7 +27,6 @@ module Haboli.Euphoria.Client
   -- ** Event handling
   , Event(..)
   , nextEvent
-  , respondingToPing
   -- ** Exception handling
   , ClientException(..)
   , throw
@@ -315,21 +314,6 @@ nextEvent = do
   case exceptionOrEvent of
     Left e  -> throwRaw e
     Right e -> pure e
-
--- | Respond to 'EventPing's according to the documentation (see
--- <http://api.euphoria.io/#ping-event>). Passes through all events unmodified.
---
--- This utility function is meant to be wrapped directly or indirectly around
--- 'nextEvent':
---
--- > event <- respondingToPing nextEvent
-respondingToPing :: Client e Event -> Client e Event
-respondingToPing holdingEvent = do
-  event <- holdingEvent
-  case event of
-    EventPing e -> pingReply (pingTime e)
-    _           -> pure ()
-  pure event
 
 {- Exception handling -}
 

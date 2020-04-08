@@ -32,10 +32,11 @@ runCommands (c:cs) msg = do
 -- 'nextEvent':
 --
 -- > event <- respondingToCommands commands nextEvent
-respondingToCommands :: [Command e] -> Client e Event -> Client e Event
-respondingToCommands cmds holdingEvent = do
-  event <- holdingEvent
+respondingToCommands :: Client e Event -> Client e [Command e] -> Client e Event
+respondingToCommands getEvent getCommands = do
+  event <- getEvent
+  commands <- getCommands
   case event of
-    EventSend e -> void $ runCommands cmds $ sendMessage e
+    EventSend e -> void $ runCommands commands $ sendMessage e
     _           -> pure ()
   pure event

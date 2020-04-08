@@ -1,7 +1,7 @@
 # Changelog for haboli
 
 ## upcoming
-- add `Haboli.Euphoria.Command` module
+- add `Haboli.Euphoria.Command` module and submodules
 - add `Haboli.Euphoria.Listing` module
 - add `Haboli.Euphoria.Util` module and move `respondingToPing` there
 - clean up project

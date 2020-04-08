@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Haboli.Euphoria.Util
-  (
+  ( formatUTCTime
+  , formatNominalDiffTime
   -- * Events
-    respondingToPing
+  , respondingToPing
   , respondingToBounce
   , respondingToBounce'
   , untilConnected
@@ -20,9 +21,26 @@ import           Data.Char
 import           Data.Function
 import qualified Data.Set                  as Set
 import qualified Data.Text                 as T
+import           Data.Time
 
 import           Haboli.Euphoria.Api
 import           Haboli.Euphoria.Client
+
+formatUTCTime :: UTCTime -> T.Text
+formatUTCTime t = T.pack $ formatTime defaultTimeLocale "%F %T" t
+
+formatNominalDiffTime :: NominalDiffTime -> T.Text
+formatNominalDiffTime t = T.intercalate " " $ map T.pack $ concat
+  [ [show days    ++ "d" | days    /= 0]
+  , [show hours   ++ "h" | hours   /= 0]
+  , [show minutes ++ "m" | minutes /= 0]
+  , [show seconds ++ "s"]
+  ]
+  where
+    totalSeconds = round $ nominalDiffTimeToSeconds t :: Integer
+    (days,    secondsAfterDays)  = totalSeconds      `quotRem` (60 * 60 * 24)
+    (hours,   secondsAfterHours) = secondsAfterDays  `quotRem` (60 * 60)
+    (minutes, seconds)           = secondsAfterHours `quotRem`  60
 
 {- Events -}
 

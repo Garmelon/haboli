@@ -194,7 +194,7 @@ data UserType
   -- ^ The client has none of the other user types. While this value does not
   -- occur nowadays, some messages in the room logs are still from a time before
   -- the distinction of user types were introduced.
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 -- | A 'UserId' identifies a user. It consists of two parts: The type of
 -- session, and a unique value for that type of session. See
@@ -202,7 +202,7 @@ data UserType
 data UserId = UserId
   { userType      :: UserType
   , userSnowflake :: Snowflake
-  } deriving (Show, Eq)
+  } deriving (Show, Eq, Ord)
 
 instance ToJSON UserId where
   toJSON uid =

@@ -10,13 +10,9 @@ module Haboli.Euphoria.ExampleBot
 import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.State
-import qualified Data.Text                      as T
+import qualified Data.Text                 as T
 
 import           Haboli.Euphoria
-import           Haboli.Euphoria.Command
-import           Haboli.Euphoria.Command.Simple
-import           Haboli.Euphoria.Listing
-import           Haboli.Euphoria.Util
 
 newtype BotState = BotState
   { botListing :: Listing

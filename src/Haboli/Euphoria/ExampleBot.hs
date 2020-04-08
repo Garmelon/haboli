@@ -1,8 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | This module contains an example implementation of a small bot. It is a good
+-- starting point if you want to create your own bot.
+
 module Haboli.Euphoria.ExampleBot
-  ( BotState(..)
-  , exampleBot
+  ( exampleBot
   ) where
 
 import           Control.Monad
@@ -22,6 +24,10 @@ newtype BotState = BotState
 
 type Bot = StateT BotState (Client T.Text)
 
+-- | A small example bot. Takes a room password as its first argument. You can
+-- run this bot in [&test](https://euphoria.io/room/test) like this:
+--
+-- > runClient defaultConfig $ exampleBot Nothing
 exampleBot :: Maybe T.Text -> Client T.Text ()
 exampleBot mPasswd = do
   initialEvents <- untilConnected $

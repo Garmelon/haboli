@@ -112,7 +112,7 @@ instance FromJSON AuthOption where
 
 -- | A 'Message' is a node in a room’s log. It corresponds to a chat message, or
 -- a post, or any broadcasted event in a room that should appear in the log. See
--- <http://api.euphoria.io/#message>.
+-- <https://api.euphoria.io/#message>.
 data Message = Message
   { msgId              :: Snowflake
   , msgParent          :: Maybe Snowflake
@@ -139,6 +139,8 @@ instance FromJSON Message where
     <*> (fmap posixSecondsToUTCTime <$> o .:? "deleted")
     <*> o .:? "truncated" .!= False
 
+-- | A 'PersonalAccountView' contains information about an euphoria account. See
+-- <https://api.euphoria.io/#personalaccountview>.
 data PersonalAccountView = PersonalAccountView
   { pavId    :: Snowflake
   , pavName  :: T.Text
@@ -152,7 +154,7 @@ instance FromJSON PersonalAccountView where
     <*> o .: "email"
 
 -- | A 'SessionView' describes a session and its identity. See
--- <http://api.euphoria.io/#sessionview>.
+-- <https://api.euphoria.io/#sessionview>.
 data SessionView = SessionView
   { svId                :: UserId
   , svNick              :: T.Text
@@ -179,7 +181,7 @@ instance FromJSON SessionView where
 
 -- | A snowflake is a 13-character string, usually used as a unique identifier
 -- for some type of object. It is the base-36 encoding of an unsigned, 64-bit
--- integer. See <http://api.euphoria.io/#snowflake>.
+-- integer. See <https://api.euphoria.io/#snowflake>.
 type Snowflake = T.Text
 
 -- | The type of session a client may have.
@@ -198,7 +200,7 @@ data UserType
 
 -- | A 'UserId' identifies a user. It consists of two parts: The type of
 -- session, and a unique value for that type of session. See
--- <http://api.euphoria.io/#userid>.
+-- <https://api.euphoria.io/#userid>.
 data UserId = UserId
   { userType      :: UserType
   , userSnowflake :: Snowflake
@@ -225,6 +227,7 @@ instance FromJSON UserId where
 
 {- bounce-event -}
 
+-- | See <https://api.euphoria.io/#bounce-event>.
 data BounceEvent = BounceEvent
   { bounceReason     :: Maybe T.Text
   , bounceAuthOption :: [AuthOption]
@@ -237,6 +240,7 @@ instance FromJSON BounceEvent where
 
 {- disconnect-event -}
 
+-- | See <https://api.euphoria.io/#disconnect-event>.
 newtype DisconnectEvent = DisconnectEvent
   { disconnectReason :: T.Text
   } deriving (Show)
@@ -247,6 +251,7 @@ instance FromJSON DisconnectEvent where
 
 {- hello-event -}
 
+-- | See <https://api.euphoria.io/#hello-event>.
 data HelloEvent = HelloEvent
   { helloAccount              :: Maybe PersonalAccountView
   , helloSessionView          :: SessionView
@@ -267,6 +272,7 @@ instance FromJSON HelloEvent where
 
 {- join-event -}
 
+-- | See <https://api.euphoria.io/#join-event>.
 newtype JoinEvent = JoinEvent
   { joinSession :: SessionView
   } deriving (Show)
@@ -277,6 +283,7 @@ instance FromJSON JoinEvent where
 
 {- login-event -}
 
+-- | See <https://api.euphoria.io/#login-event>.
 newtype LoginEvent = LoginEvent
   { loginAccountId :: Snowflake
   } deriving (Show)
@@ -287,6 +294,7 @@ instance FromJSON LoginEvent where
 
 {- logout-event -}
 
+-- | See <https://api.euphoria.io/#logout-event>.
 data LogoutEvent = LogoutEvent
   deriving (Show)
 
@@ -295,6 +303,7 @@ instance FromJSON LogoutEvent where
 
 {- network-event -}
 
+-- | See <https://api.euphoria.io/#network-event>.
 data NetworkEvent = NetworkEvent
   { networkType      :: T.Text -- always "partition"
   , networkServerId  :: T.Text
@@ -309,6 +318,7 @@ instance FromJSON NetworkEvent where
 
 {- nick-event -}
 
+-- | See <https://api.euphoria.io/#nick-event>.
 data NickEvent = NickEvent
   { nickSessionId :: T.Text
   , nickId        :: UserId
@@ -325,6 +335,7 @@ instance FromJSON NickEvent where
 
 {- edit-message-event -}
 
+-- | See <https://api.euphoria.io/#edit-message-event>.
 data EditMessageEvent = EditMessageEvent
   { editMessageMessage :: Message
   , editMessageEditId  :: Snowflake
@@ -337,6 +348,7 @@ instance FromJSON EditMessageEvent where
 
 {- part-event -}
 
+-- | See <https://api.euphoria.io/#part-event>.
 newtype PartEvent = PartEvent
   { partSession :: SessionView
   } deriving (Show)
@@ -347,6 +359,7 @@ instance FromJSON PartEvent where
 
 {- ping-event -}
 
+-- | See <https://api.euphoria.io/#ping-event>.
 data PingEvent = PingEvent
   { pingTime :: UTCTime
   , pingNext :: UTCTime
@@ -359,6 +372,7 @@ instance FromJSON PingEvent where
 
 {- pm-initiate-event -}
 
+-- | See <https://api.euphoria.io/#pm-initiate-event>.
 data PmInitiateEvent = PmInitiateEvent
   { pmInitiateFrom     :: UserId
   , pmInitiateFromNick :: T.Text
@@ -375,6 +389,7 @@ instance FromJSON PmInitiateEvent where
 
 {- send-event -}
 
+-- | See <https://api.euphoria.io/#send-event>.
 newtype SendEvent = SendEvent
   { sendMessage :: Message
   } deriving (Show)
@@ -385,6 +400,7 @@ instance FromJSON SendEvent where
 
 {- snapshot-event -}
 
+-- | See <https://api.euphoria.io/#snapshot-event>.
 data SnapshotEvent = SnapshotEvent
   { snapshotIdentity     :: UserId
   , snapshotSessionId    :: T.Text
@@ -411,6 +427,7 @@ instance FromJSON SnapshotEvent where
 
 {- auth -}
 
+-- | See <https://api.euphoria.io/#auth>.
 newtype AuthCommand = AuthWithPasscode T.Text
   deriving (Show)
 
@@ -420,6 +437,7 @@ instance ToJSONObject AuthCommand where
     , "passcode" .= password
     ]
 
+-- | See <https://api.euphoria.io/#auth>.
 data AuthReply = AuthSuccessful | AuthFailed T.Text
   deriving (Show)
 
@@ -434,6 +452,7 @@ instance FromJSON AuthReply where
 
 {- ping -}
 
+-- | See <https://api.euphoria.io/#ping>.
 newtype PingCommand = PingCommand UTCTime
   deriving (Show)
 
@@ -442,6 +461,7 @@ instance ToJSONObject PingCommand where
     [ "time" .= utcTimeToPOSIXSeconds time
     ]
 
+-- | See <https://api.euphoria.io/#ping>.
 newtype PingReply = PingReply UTCTime
   deriving (Show)
 
@@ -458,6 +478,7 @@ instance FromJSON PingReply where
 
 {- get-message -}
 
+-- | See <https://api.euphoria.io/#get-message>.
 newtype GetMessageCommand = GetMessageCommand Snowflake
   deriving (Show)
 
@@ -466,6 +487,7 @@ instance ToJSONObject GetMessageCommand where
     [ "id" .= mId
     ]
 
+-- | See <https://api.euphoria.io/#get-message>.
 newtype GetMessageReply = GetMessageReply Message
   deriving (Show)
 
@@ -475,6 +497,7 @@ instance FromJSON GetMessageReply where
 
 {- log -}
 
+-- | See <https://api.euphoria.io/#log>.
 data LogCommand = LogCommand Int (Maybe Snowflake)
   deriving (Show)
 
@@ -487,6 +510,7 @@ instance ToJSONObject LogCommand where
     , "before" .= before
     ]
 
+-- | See <https://api.euphoria.io/#log>.
 data LogReply = LogReply [Message] (Maybe Snowflake)
   deriving (Show)
 
@@ -497,6 +521,7 @@ instance FromJSON LogReply where
 
 {- nick -}
 
+-- | See <https://api.euphoria.io/#nick>.
 newtype NickCommand = NickCommand T.Text
   deriving (Show)
 
@@ -505,6 +530,7 @@ instance ToJSONObject NickCommand where
     [ "name" .= nick
     ]
 
+-- | See <https://api.euphoria.io/#nick>.
 data NickReply = NickReply
   { nickReplySessionId :: T.Text
   , nickReplyId        :: UserId
@@ -521,6 +547,7 @@ instance FromJSON NickReply where
 
 {- pm-initiate -}
 
+-- | See <https://api.euphoria.io/#pm-initiate>.
 newtype PmInitiateCommand = PmInitiateCommand UserId
   deriving (Show)
 
@@ -529,6 +556,7 @@ instance ToJSONObject PmInitiateCommand where
     [ "user_id" .= userId
     ]
 
+-- | See <https://api.euphoria.io/#pm-initiate>.
 data PmInitiateReply = PmInitiateReply Snowflake T.Text
   deriving (Show)
 
@@ -539,6 +567,7 @@ instance FromJSON PmInitiateReply where
 
 {- send -}
 
+-- | See <https://api.euphoria.io/#send>.
 data SendCommand = SendCommand T.Text (Maybe Snowflake)
   deriving (Show)
 
@@ -548,6 +577,7 @@ instance ToJSONObject SendCommand where
   toJSONObject (SendCommand content (Just parent)) =
     toPacket "send" $ object ["content" .= content, "parent" .= parent]
 
+-- | See <https://api.euphoria.io/#send>.
 newtype SendReply = SendReply Message
   deriving (Show)
 
@@ -557,12 +587,14 @@ instance FromJSON SendReply where
 
 {- who -}
 
+-- | See <https://api.euphoria.io/#who>.
 data WhoCommand = WhoCommand
   deriving (Show)
 
 instance ToJSONObject WhoCommand where
   toJSONObject WhoCommand = toPacket "who" $ object []
 
+-- | See <https://api.euphoria.io/#who>.
 newtype WhoReply = WhoReply [SessionView]
   deriving (Show)
 

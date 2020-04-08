@@ -4,6 +4,7 @@
 - add `Haboli.Euphoria.Command` module
 - clean up project
 - fix nick of example bot in readme
+- remove `Haboli.Euphoria.Examples` module
 
 ## 0.3.1.0
 - add `Haboli.Euphoria` module

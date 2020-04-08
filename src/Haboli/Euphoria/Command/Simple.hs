@@ -2,7 +2,9 @@
 
 module Haboli.Euphoria.Command.Simple
   ( cmdGeneral
+  , cmdGeneral'
   , cmdSpecific
+  , cmdSpecific'
   ) where
 
 import           Control.Monad
@@ -34,11 +36,23 @@ pUntilEof = takeWhileP Nothing (const True)
 pCmdGeneral :: T.Text -> Parser T.Text
 pCmdGeneral cmd = pCmd cmd *> space *> pUntilEof
 
-cmdGeneral :: T.Text -> (Message -> T.Text -> Client e ()) -> Command e
-cmdGeneral cmd = cmdMega $ pCmdGeneral cmd
-
 pCmdSpecific :: T.Text -> T.Text -> Parser T.Text
 pCmdSpecific cmd name = pCmd cmd *> space1 *> pNick name *> space *> pUntilEof
 
-cmdSpecific :: T.Text -> T.Text -> (Message -> T.Text -> Client e ()) -> Command e
-cmdSpecific name cmd = cmdMega $ pCmdSpecific cmd name
+pWithoutArgs :: Parser T.Text -> Parser ()
+pWithoutArgs p = do
+  args <- p
+  guard $ T.null args
+
+cmdGeneral :: T.Text -> (Message -> Client e ()) -> Command e
+cmdGeneral cmd f = cmdMega (pWithoutArgs $ pCmdGeneral cmd) $ \msg _ -> f msg
+
+cmdGeneral' :: T.Text -> (Message -> T.Text -> Client e ()) -> Command e
+cmdGeneral' cmd = cmdMega $ pCmdGeneral cmd
+
+cmdSpecific :: T.Text -> T.Text -> (Message -> Client e ()) -> Command e
+cmdSpecific cmd name f =
+  cmdMega (pWithoutArgs $ pCmdSpecific cmd name) $ \msg _ -> f msg
+
+cmdSpecific' :: T.Text -> T.Text -> (Message -> T.Text -> Client e ()) -> Command e
+cmdSpecific' cmd name = cmdMega $ pCmdSpecific cmd name

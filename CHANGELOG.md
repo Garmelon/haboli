@@ -4,6 +4,7 @@
 - add `Haboli.Euphoria.Command` module and submodules
 - add `Haboli.Euphoria.Listing` module
 - add `Haboli.Euphoria.Util` module and move `respondingToPing` there
+- add example bot (`Haboli.Euphoria.ExampleBot`)
 - clean up project
 - fix nick of example bot in readme
 - remove `Haboli.Euphoria.Examples` module

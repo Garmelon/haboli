@@ -6,6 +6,7 @@ module Haboli.Euphoria.Listing
   , self
   , others
   , updateOwnNick
+  , preferNick
   , updateFromList
   , updateFromEvent
   ) where
@@ -39,6 +40,13 @@ others = lsOthers
 
 updateOwnNick :: T.Text -> Listing -> Listing
 updateOwnNick name listing = listing{lsSelf = (lsSelf listing){svNick = name}}
+
+preferNick :: T.Text -> Listing -> Client e Listing
+preferNick name listing
+  | name == svNick (self listing) = pure listing
+  | otherwise = do
+      (_, newNick) <- nick name
+      pure $ updateOwnNick newNick listing
 
 updateFromList :: [SessionView] -> Listing -> Listing
 updateFromList sessions listing =

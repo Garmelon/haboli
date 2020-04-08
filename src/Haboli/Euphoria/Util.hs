@@ -1,10 +1,13 @@
+{-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | This module contains a few utility functions that don't deserve their own
+-- modules.
+
 module Haboli.Euphoria.Util
-  ( formatUTCTime
-  , formatNominalDiffTime
+  (
   -- * Events
-  , respondingToPing
+    respondingToPing
   , respondingToBounce
   , respondingToBounce'
   , untilConnected
@@ -13,6 +16,9 @@ module Haboli.Euphoria.Util
   , nickMention
   , nickNormalize
   , nickEqual
+  -- * Time formatting
+  , formatUTCTime
+  , formatNominalDiffTime
   ) where
 
 import           Control.Monad.Trans.Class
@@ -26,25 +32,9 @@ import           Data.Time
 import           Haboli.Euphoria.Api
 import           Haboli.Euphoria.Client
 
-formatUTCTime :: UTCTime -> T.Text
-formatUTCTime t = T.pack $ formatTime defaultTimeLocale "%F %T" t
-
-formatNominalDiffTime :: NominalDiffTime -> T.Text
-formatNominalDiffTime t = T.intercalate " " $ map T.pack $ concat
-  [ [show days    ++ "d" | days    /= 0]
-  , [show hours   ++ "h" | hours   /= 0]
-  , [show minutes ++ "m" | minutes /= 0]
-  , [show seconds ++ "s"]
-  ]
-  where
-    totalSeconds = round $ nominalDiffTimeToSeconds t :: Integer
-    (days,    secondsAfterDays)  = totalSeconds      `quotRem` (60 * 60 * 24)
-    (hours,   secondsAfterHours) = secondsAfterDays  `quotRem` (60 * 60)
-    (minutes, seconds)           = secondsAfterHours `quotRem`  60
-
 {- Events -}
 
--- | Respond to 'EventPing's according to the documentation (see
+-- | Respond to 'EventPing's according to the euphoria documentation (see
 -- <http://api.euphoria.io/#ping-event>). Passes through all events unmodified.
 --
 -- This utility function is meant to be wrapped directly or indirectly around
@@ -59,9 +49,19 @@ respondingToPing getEvent = do
     _           -> pure ()
   pure event
 
+-- | Respond to 'EventBounce's according to the euphoria documentation. If no
+-- password is provided but an 'EventBounce' is encountered, throw a 'T.Text'
+-- exception.
+--
+-- This utility function is meant to be wrapped directly or indirectly around
+-- 'nextEvent':
+--
+-- > event <- respondingToBounce (Just passwd) nextEvent
 respondingToBounce :: Maybe T.Text -> Client T.Text Event -> Client T.Text Event
 respondingToBounce = respondingToBounce' id
 
+-- | A variant of 'respondingToBounce' that allows wrapping the exception into a
+-- custom type.
 respondingToBounce' :: (T.Text -> e) -> Maybe T.Text -> Client e Event -> Client e Event
 respondingToBounce' onError mPasswd getEvent = do
   event <- getEvent
@@ -77,9 +77,15 @@ respondingToBounce' onError mPasswd getEvent = do
     _ -> pure ()
   pure event
 
+-- | Receive events until both an 'EventHello' and 'EventSnapshot' were
+-- received, then return those. Throw a 'T.Text' exception if an invalid 'Event'
+-- was encountered. Valid events are 'EventPing', 'EventBounce', 'EventHello'
+-- and 'EventSnapshot'.
 untilConnected :: Client T.Text Event -> Client T.Text (HelloEvent, SnapshotEvent)
 untilConnected = untilConnected' id
 
+-- | A variant of 'untilConnected' that allows wrapping the exception into a
+-- custom type.
 untilConnected' :: (T.Text -> e) -> Client e Event -> Client e (HelloEvent, SnapshotEvent)
 untilConnected' onError getEvent = evalStateT helper (Nothing, Nothing)
   where
@@ -98,6 +104,8 @@ untilConnected' onError getEvent = evalStateT helper (Nothing, Nothing)
 
 {- Nick -}
 
+-- | Modify a nick such that — when prepended with an @\@@ — it will (hopefully)
+-- ping the person with that nick on euphoria.
 nickMention :: T.Text -> T.Text
 nickMention name
   | T.length name > 1 = T.filter isMentionChar name
@@ -106,10 +114,41 @@ nickMention name
     isMentionChar c = not $ isSpace c || c `Set.member` terminatingChars
     terminatingChars = Set.fromList ",.!?;&<'\""
 
+-- | Normalize nicks (for nick comparison purposes) by removing all space
+-- characters and converting the rest into a case-insensitive representation.
 nickNormalize :: T.Text -> T.Text
 nickNormalize name
   | T.length name > 1 = T.toCaseFold $ T.filter (not . isSpace) name
   | otherwise         = T.toCaseFold name
 
+-- | Check two nicks for equality by comparing their normalized versions.
 nickEqual :: T.Text -> T.Text -> Bool
 nickEqual = (==) `on` nickNormalize
+
+{- Time formatting -}
+
+-- | Convert a 'UTCTime' into the format @yyyy-mm-dd HH:MM:SS@.
+formatUTCTime :: UTCTime -> T.Text
+formatUTCTime t = T.pack $ formatTime defaultTimeLocale "%F %T" t
+
+-- | Convert a 'NominalDiffTime' into the format @[[[\<days\>d ]\<hours\>h
+-- ]\<minutes\>m ]\<seconds\>s@ where the square brackets denote optional parts.
+-- Only those parts required to fully display the time span are output. If the
+-- 'NominalDiffTime' is negative, a @-@ is prefixed.
+formatNominalDiffTime :: NominalDiffTime -> T.Text
+formatNominalDiffTime t = (sign <>) $ T.intercalate " " $ map T.pack $ if
+  | days    /= 0 -> [fDays, fHours, fMinutes, fSeconds]
+  | hours   /= 0 -> [       fHours, fMinutes, fSeconds]
+  | minutes /= 0 -> [               fMinutes, fSeconds]
+  | otherwise    -> [                         fSeconds]
+  where
+    diffSeconds = round $ nominalDiffTimeToSeconds t :: Integer
+    sign = if diffSeconds < 0 then "-" else ""
+    totalSeconds = abs diffSeconds
+    (days,    secondsAfterDays)  = totalSeconds      `quotRem` (60 * 60 * 24)
+    (hours,   secondsAfterHours) = secondsAfterDays  `quotRem` (60 * 60)
+    (minutes, seconds)           = secondsAfterHours `quotRem`  60
+    fDays    = show days    ++ "d"
+    fHours   = show hours   ++ "h"
+    fMinutes = show minutes ++ "m"
+    fSeconds = show seconds ++ "s"

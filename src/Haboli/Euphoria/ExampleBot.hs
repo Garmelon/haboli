@@ -50,15 +50,15 @@ exampleBot mPasswd = do
 
 botMain :: MVar BotState -> Client T.Text ()
 botMain stateVar = forever $ do
-  event <- respondingToCommands (getCommands stateVar) $
+  event <- respondingToCommand (getCommand stateVar) $
     respondingToPing nextEvent
   updateFromEventVia botListing stateVar event
 
-getCommands :: MVar BotState -> Client e [Command T.Text]
-getCommands stateVar = do
+getCommand :: MVar BotState -> Client e (Command T.Text)
+getCommand stateVar = do
   state <- liftIO $ readMVar stateVar
   let name = state ^. botListing . lsSelfL . svNickL
-  pure
+  pure $ cmdSequential
     [ botrulezPingGeneral
     , botrulezPingSpecific name
     , botrulezHelpSpecific name

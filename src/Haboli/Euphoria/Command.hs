@@ -2,8 +2,9 @@
 
 module Haboli.Euphoria.Command
   ( Command
-  , runCommands
-  , respondingToCommands
+  , cmdSequential
+  , cmdParallel
+  , respondingToCommand
   ) where
 
 import           Control.Monad
@@ -15,32 +16,41 @@ import           Haboli.Euphoria.Client
 -- it should return 'True'. Otherwise. it should return 'False'.
 type Command e = Message -> Client e Bool
 
--- | Apply multiple 'Command's to a 'Message' in order until one returns 'True'.
--- All commands following that one are not applied.
-runCommands :: [Command e] -> Message -> Client e Bool
-runCommands [] _ = pure False
-runCommands (c:cs) msg = do
+-- | Try out multiple 'Command's in order until one returns 'True'. All commands
+-- following that one are not applied. Returns 'True' if any of the commands
+-- returned 'True'. Returns 'False' otherwise.
+cmdSequential :: [Command e] -> Command e
+cmdSequential [] _ = pure False
+cmdSequential (c:cs) msg = do
   abort <- c msg
   if abort
     then pure True
-    else runCommands cs msg
+    else cmdSequential cs msg
 
--- | @'respondingToCommands' getCommands getEvent@ runs a list of 'Command's on
--- all 'EventSend's. It passes through all events unmodified.
+-- | Apply multiple 'Command's in order. Each command will be applied. Returns
+-- 'True' if at least one of the commands returned 'True'. Returns 'False'
+-- otherwise.
+cmdParallel :: [Command e] -> Command e
+cmdParallel commands msg = do
+  results <- traverse ($msg) commands
+  pure $ or results
+
+-- | @'respondingToCommand' getCommand getEvent@ runs a 'Command' on all
+-- 'EventSend's. It passes through all events unmodified.
 --
--- The @getEvent@ action is used to obtain the next 'Event'. The @getCommands@
--- action is used to obtain the currently available commands. @getCommands@ is
+-- The @getEvent@ action is used to obtain the next 'Event'. The @getCommand@
+-- action is used to obtain the currently available command. @getCommand@ is
 -- called directly after a new 'Event' becomes available through @getEvent@.
 --
 -- This utility function is meant to be wrapped directly or indirectly around
 -- 'nextEvent':
 --
--- > event <- respondingToCommands commands nextEvent
-respondingToCommands :: Client e [Command e] -> Client e Event -> Client e Event
-respondingToCommands getCommands getEvent = do
+-- > event <- respondingToCommand command nextEvent
+respondingToCommand :: Client e (Command e) -> Client e Event -> Client e Event
+respondingToCommand getCommand getEvent = do
   event <- getEvent
-  commands <- getCommands
+  command <- getCommand
   case event of
-    EventSend e -> void $ runCommands commands $ sendMessage e
+    EventSend e -> void $ command $ sendMessage e
     _           -> pure ()
   pure event

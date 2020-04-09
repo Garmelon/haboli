@@ -1,10 +1,10 @@
-cabal-version: 1.12
+cabal-version: 1.18
 
 -- This file has been generated from package.yaml by hpack version 0.31.2.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 35dc75bb1fd8534c4476115b165d0e969a579affaa05a419abe6f7e3ab749082
+-- hash: 3ce7165a468ff6ccd5e098638b16268df6af5b8dbd4f0ac2e5490a29f6f15a37
 
 name:           haboli
 version:        0.3.1.0
@@ -22,6 +22,8 @@ extra-source-files:
     README.md
     CHANGELOG.md
     LICENSE
+extra-doc-files:
+    README.md
 
 source-repository head
   type: git

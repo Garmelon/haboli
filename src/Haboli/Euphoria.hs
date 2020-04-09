@@ -1,6 +1,6 @@
 -- | This module reexports the most commonly used modules for convenience. For
--- more detail on how this library works, check the "Haboli.Euphoria.Client"
--- module's documentation.
+-- more detail on how this library works, check the <README.md> or the
+-- "Haboli.Euphoria.Client" module's documentation.
 
 module Haboli.Euphoria
   ( module Haboli.Euphoria.Api

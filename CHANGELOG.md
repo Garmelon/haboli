@@ -10,6 +10,7 @@
 - clean up project
 - fix nick of example bot in readme
 - remove `Haboli.Euphoria.Examples` module
+- update `README.md` to reflect these changes
 
 ## 0.3.1.0
 - add `Haboli.Euphoria` module

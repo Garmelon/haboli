@@ -21,9 +21,25 @@ supports all session and chat room commands listed in the
 For more information, see the haddock for the `Haboli.Euphoria.Client` and
 `Haboli.Euphoria.Api` modules.
 
-## Example bot
+## Bots
 
-Here is a very basic example bot that replies to `!ping` with `Pong!`:
+The library is built with flexibility and composability in mind. Because of
+this, there is no special `Bot` monad — bots also run inside the `Client` monad.
+However, there are a few convenience modules that make development of bots
+easier.
+
+The convenience modules are built on top of the `Client` monad. None of the
+convenience modules are necessary to create a functioning bot. When creating a
+new bot, you can freely choose which modules to use and which to ignore or
+replace with your own creations.
+
+For an example bot structure using the convenience modules, here is an
+[example bot](src/Haboli/Euphoria/ExampleBot.hs).
+
+## Example client
+
+Here is a very basic example bot that replies to `!ping` with `Pong!`. It does
+not use any of the provided convenience modules.
 
 ```haskell
 pingPongBot :: Client () ()
@@ -44,3 +60,11 @@ And here's how to run that bot:
 main :: IO ()
 main = void $ runClient defaultConfig pingPongBot
 ```
+
+## Lenses
+
+Haboli exports lenses for a few data types. The lenses are named like the record
+accessors but suffixed with a `L`. For example, the lens corresponding to
+`svNick` from `SessionView` is named `svNickL`. Lenses are not required to use
+the libary. They are provided for the convenience of those who like using
+lenses.

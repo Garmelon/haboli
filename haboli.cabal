@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ae5e8a6e8abe1ff515797a54dfa9acd185df7699102b31190d569ccfe3a693f8
+-- hash: 35dc75bb1fd8534c4476115b165d0e969a579affaa05a419abe6f7e3ab749082
 
 name:           haboli
 version:        0.3.1.0
@@ -37,6 +37,7 @@ library
       Haboli.Euphoria.Command.Megaparsec
       Haboli.Euphoria.Command.Simple
       Haboli.Euphoria.ExampleBot
+      Haboli.Euphoria.Lens
       Haboli.Euphoria.Listing
       Haboli.Euphoria.Util
   other-modules:
@@ -48,8 +49,11 @@ library
     , base >=4.7 && <5
     , containers
     , megaparsec
+    , microlens
+    , microlens-th
     , network
     , stm
+    , template-haskell
     , text
     , time
     , transformers

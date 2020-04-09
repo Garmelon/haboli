@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 -- | This module attempts to map the structure of the ephoria API to types.
 
@@ -6,41 +7,101 @@ module Haboli.Euphoria.Api
   ( ToJSONObject(..)
   -- * Basic types
   , AuthOption(..)
-  , Message(..)
-  , PersonalAccountView(..)
-  , SessionView(..)
   , Snowflake
   , UserType(..)
   , UserId(..)
+  , userTypeL
+  , userSnowflakeL
+  , SessionView(..)
+  , svIdL
+  , svNickL
+  , svServerIdL
+  , svServerEraL
+  , svSessionIdL
+  , svIsStaffL
+  , svIsManagerL
+  , svClientAddressL
+  , svRealClientAddressL
+  , Message(..)
+  , msgIdL
+  , msgParentL
+  , msgPreviousEditIdL
+  , msgTimeL
+  , msgSenderL
+  , msgContentL
+  , msgEncryptionKeyIdL
+  , msgEditedL
+  , msgDeletedL
+  , msgTruncatedL
+  , PersonalAccountView(..)
+  , pavIdL
+  , pavNameL
+  , pavEmailL
   -- * Asynchronous events
   -- ** bounce-event
   , BounceEvent(..)
+  , bounceReasonL
+  , bounceAuthOptionL
   -- ** disconnect-event
   , DisconnectEvent(..)
+  , disconnectReasonL
   -- ** hello-event
   , HelloEvent(..)
+  , helloAccountL
+  , helloSessionViewL
+  , helloAccountHasAccessL
+  , helloAccountEmailVerifiedL
+  , helloRoomIsPrivateL
+  , helloVersionL
   -- ** join-event
   , JoinEvent(..)
+  , joinSessionL
   -- ** login-event
   , LoginEvent(..)
+  , loginAccountIdL
   -- ** logout-event
   , LogoutEvent(..)
   -- ** network-event
   , NetworkEvent(..)
+  , networkTypeL
+  , networkServerIdL
+  , networkServerEraL
   -- ** nick-event
   , NickEvent(..)
+  , nickSessionIdL
+  , nickIdL
+  , nickFromL
+  , nickToL
   -- ** edit-message-event
   , EditMessageEvent(..)
+  , editMessageMessageL
+  , editMessageEditIdL
   -- ** part-event
   , PartEvent(..)
+  , partSessionL
   -- ** ping-event
   , PingEvent(..)
+  , pingTimeL
+  , pingNextL
   -- ** pm-initiate-event
   , PmInitiateEvent(..)
+  , pmInitiateFromL
+  , pmInitiateFromNickL
+  , pmInitiateFromRoomL
+  , pmInitiatePmIdL
   -- ** send-event
   , SendEvent(..)
+  , sendMessageL
   -- ** snapshot-event
   , SnapshotEvent(..)
+  , snapshotIdentityL
+  , snapshotSessionIdL
+  , snapshotVersionL
+  , snapshotListingL
+  , snapshotLogL
+  , snapshotNickL
+  , snapshotPmWithNickL
+  , snapshotPmWithUserIdL
   -- * Session commands
   -- ** auth
   , AuthCommand(..)
@@ -77,6 +138,8 @@ import qualified Data.Text             as T
 import           Data.Time
 import           Data.Time.Clock.POSIX
 
+import Haboli.Euphoria.Lens
+
 -- | A class for all types that can be converted into an
 -- 'Data.Aeson.Types.Object'. Similar to 'ToJSON', but more restrictive.
 class ToJSONObject a where
@@ -110,75 +173,6 @@ instance FromJSON AuthOption where
   parseJSON (String _)          = fail "invalid value"
   parseJSON v                   = typeMismatch "String" v
 
--- | A 'Message' is a node in a room’s log. It corresponds to a chat message, or
--- a post, or any broadcasted event in a room that should appear in the log. See
--- <https://api.euphoria.io/#message>.
-data Message = Message
-  { msgId              :: Snowflake
-  , msgParent          :: Maybe Snowflake
-  , msgPreviousEditId  :: Maybe Snowflake
-  , msgTime            :: UTCTime
-  , msgSender          :: SessionView
-  , msgContent         :: T.Text
-  , msgEncryptionKeyId :: Maybe T.Text
-  , msgEdited          :: Maybe UTCTime
-  , msgDeleted         :: Maybe UTCTime
-  , msgTruncated       :: Bool
-  } deriving (Show)
-
-instance FromJSON Message where
-  parseJSON v = parseJSON v >>= \o -> Message
-    <$> o .: "id"
-    <*> o .:? "parent"
-    <*> o .:? "previous_edit_id"
-    <*> (posixSecondsToUTCTime <$> o .: "time")
-    <*> o .: "sender"
-    <*> o .: "content"
-    <*> o .:? "encryption_key_id"
-    <*> o .:? "edited"
-    <*> (fmap posixSecondsToUTCTime <$> o .:? "deleted")
-    <*> o .:? "truncated" .!= False
-
--- | A 'PersonalAccountView' contains information about an euphoria account. See
--- <https://api.euphoria.io/#personalaccountview>.
-data PersonalAccountView = PersonalAccountView
-  { pavId    :: Snowflake
-  , pavName  :: T.Text
-  , pavEmail :: T.Text
-  } deriving (Show)
-
-instance FromJSON PersonalAccountView where
-  parseJSON v = parseJSON v >>= \o -> PersonalAccountView
-    <$> o .: "id"
-    <*> o .: "name"
-    <*> o .: "email"
-
--- | A 'SessionView' describes a session and its identity. See
--- <https://api.euphoria.io/#sessionview>.
-data SessionView = SessionView
-  { svId                :: UserId
-  , svNick              :: T.Text
-  , svServerId          :: T.Text
-  , svServerEra         :: T.Text
-  , svSessionId         :: T.Text
-  , svIsStaff           :: Bool
-  , svIsManager         :: Bool
-  , svClientAddress     :: Maybe T.Text
-  , svRealClientAddress :: Maybe T.Text
-  } deriving (Show)
-
-instance FromJSON SessionView where
-  parseJSON v = parseJSON v >>= \o -> SessionView
-    <$> o .: "id"
-    <*> o .: "name"
-    <*> o .: "server_id"
-    <*> o .: "server_era"
-    <*> o .: "session_id"
-    <*> o .:? "is_staff" .!= False
-    <*> o .:? "is_manager" .!= False
-    <*> o .:? "client_address"
-    <*> o .:? "real_client_address"
-
 -- | A snowflake is a 13-character string, usually used as a unique identifier
 -- for some type of object. It is the base-36 encoding of an unsigned, 64-bit
 -- integer. See <https://api.euphoria.io/#snowflake>.
@@ -206,6 +200,8 @@ data UserId = UserId
   , userSnowflake :: Snowflake
   } deriving (Show, Eq, Ord)
 
+makeLensesL ''UserId
+
 instance ToJSON UserId where
   toJSON uid =
     let prefix = case userType uid of
@@ -223,6 +219,81 @@ instance FromJSON UserId where
     ("bot", snowflake)     -> pure $ UserId Bot     $ T.drop 1 snowflake
     _                      -> fail "invalid user id label"
 
+-- | A 'SessionView' describes a session and its identity. See
+-- <https://api.euphoria.io/#sessionview>.
+data SessionView = SessionView
+  { svId                :: UserId
+  , svNick              :: T.Text
+  , svServerId          :: T.Text
+  , svServerEra         :: T.Text
+  , svSessionId         :: T.Text
+  , svIsStaff           :: Bool
+  , svIsManager         :: Bool
+  , svClientAddress     :: Maybe T.Text
+  , svRealClientAddress :: Maybe T.Text
+  } deriving (Show)
+
+makeLensesL ''SessionView
+
+instance FromJSON SessionView where
+  parseJSON v = parseJSON v >>= \o -> SessionView
+    <$> o .: "id"
+    <*> o .: "name"
+    <*> o .: "server_id"
+    <*> o .: "server_era"
+    <*> o .: "session_id"
+    <*> o .:? "is_staff" .!= False
+    <*> o .:? "is_manager" .!= False
+    <*> o .:? "client_address"
+    <*> o .:? "real_client_address"
+
+-- | A 'Message' is a node in a room’s log. It corresponds to a chat message, or
+-- a post, or any broadcasted event in a room that should appear in the log. See
+-- <https://api.euphoria.io/#message>.
+data Message = Message
+  { msgId              :: Snowflake
+  , msgParent          :: Maybe Snowflake
+  , msgPreviousEditId  :: Maybe Snowflake
+  , msgTime            :: UTCTime
+  , msgSender          :: SessionView
+  , msgContent         :: T.Text
+  , msgEncryptionKeyId :: Maybe T.Text
+  , msgEdited          :: Maybe UTCTime
+  , msgDeleted         :: Maybe UTCTime
+  , msgTruncated       :: Bool
+  } deriving (Show)
+
+makeLensesL ''Message
+
+instance FromJSON Message where
+  parseJSON v = parseJSON v >>= \o -> Message
+    <$> o .: "id"
+    <*> o .:? "parent"
+    <*> o .:? "previous_edit_id"
+    <*> (posixSecondsToUTCTime <$> o .: "time")
+    <*> o .: "sender"
+    <*> o .: "content"
+    <*> o .:? "encryption_key_id"
+    <*> o .:? "edited"
+    <*> (fmap posixSecondsToUTCTime <$> o .:? "deleted")
+    <*> o .:? "truncated" .!= False
+
+-- | A 'PersonalAccountView' contains information about an euphoria account. See
+-- <https://api.euphoria.io/#personalaccountview>.
+data PersonalAccountView = PersonalAccountView
+  { pavId    :: Snowflake
+  , pavName  :: T.Text
+  , pavEmail :: T.Text
+  } deriving (Show)
+
+makeLensesL ''PersonalAccountView
+
+instance FromJSON PersonalAccountView where
+  parseJSON v = parseJSON v >>= \o -> PersonalAccountView
+    <$> o .: "id"
+    <*> o .: "name"
+    <*> o .: "email"
+
 {- Asynchronous events -}
 
 {- bounce-event -}
@@ -232,6 +303,8 @@ data BounceEvent = BounceEvent
   { bounceReason     :: Maybe T.Text
   , bounceAuthOption :: [AuthOption]
   } deriving (Show)
+
+makeLensesL ''BounceEvent
 
 instance FromJSON BounceEvent where
   parseJSON = fromPacket "bounce-event" $ \o -> BounceEvent
@@ -244,6 +317,8 @@ instance FromJSON BounceEvent where
 newtype DisconnectEvent = DisconnectEvent
   { disconnectReason :: T.Text
   } deriving (Show)
+
+makeLensesL ''DisconnectEvent
 
 instance FromJSON DisconnectEvent where
   parseJSON = fromPacket "disconnect-evnet" $ \o -> DisconnectEvent
@@ -261,6 +336,8 @@ data HelloEvent = HelloEvent
   , helloVersion              :: T.Text
   } deriving (Show)
 
+makeLensesL ''HelloEvent
+
 instance FromJSON HelloEvent where
   parseJSON = fromPacket "hello-event" $ \o -> HelloEvent
     <$> o .:? "account"
@@ -277,6 +354,8 @@ newtype JoinEvent = JoinEvent
   { joinSession :: SessionView
   } deriving (Show)
 
+makeLensesL ''JoinEvent
+
 instance FromJSON JoinEvent where
   parseJSON = fromPacket "join-event" $ \o -> JoinEvent
     <$> parseJSON (Object o)
@@ -287,6 +366,8 @@ instance FromJSON JoinEvent where
 newtype LoginEvent = LoginEvent
   { loginAccountId :: Snowflake
   } deriving (Show)
+
+makeLensesL ''LoginEvent
 
 instance FromJSON LoginEvent where
   parseJSON = fromPacket "login-event" $ \o -> LoginEvent
@@ -310,6 +391,8 @@ data NetworkEvent = NetworkEvent
   , networkServerEra :: T.Text
   } deriving (Show)
 
+makeLensesL ''NetworkEvent
+
 instance FromJSON NetworkEvent where
   parseJSON = fromPacket "network-event" $ \o -> NetworkEvent
     <$> o .: "type"
@@ -326,6 +409,8 @@ data NickEvent = NickEvent
   , nickTo        :: T.Text
   } deriving (Show)
 
+makeLensesL ''NickEvent
+
 instance FromJSON NickEvent where
   parseJSON = fromPacket "nick-event" $ \o -> NickEvent
     <$> o .: "session_id"
@@ -341,6 +426,8 @@ data EditMessageEvent = EditMessageEvent
   , editMessageEditId  :: Snowflake
   } deriving (Show)
 
+makeLensesL ''EditMessageEvent
+
 instance FromJSON EditMessageEvent where
   parseJSON = fromPacket "EditMessageEvent" $ \o -> EditMessageEvent
     <$> parseJSON (Object o)
@@ -353,6 +440,8 @@ newtype PartEvent = PartEvent
   { partSession :: SessionView
   } deriving (Show)
 
+makeLensesL ''PartEvent
+
 instance FromJSON PartEvent where
   parseJSON = fromPacket "part-event" $ \o -> PartEvent
     <$> parseJSON (Object o)
@@ -364,6 +453,8 @@ data PingEvent = PingEvent
   { pingTime :: UTCTime
   , pingNext :: UTCTime
   } deriving (Show)
+
+makeLensesL ''PingEvent
 
 instance FromJSON PingEvent where
   parseJSON = fromPacket "ping-event" $ \o -> PingEvent
@@ -380,6 +471,8 @@ data PmInitiateEvent = PmInitiateEvent
   , pmInitiatePmId     :: Snowflake
   } deriving (Show)
 
+makeLensesL ''PmInitiateEvent
+
 instance FromJSON PmInitiateEvent where
   parseJSON = fromPacket "pm-initiate-event" $ \o -> PmInitiateEvent
     <$> o .: "from"
@@ -393,6 +486,8 @@ instance FromJSON PmInitiateEvent where
 newtype SendEvent = SendEvent
   { sendMessage :: Message
   } deriving (Show)
+
+makeLensesL ''SendEvent
 
 instance FromJSON SendEvent where
   parseJSON = fromPacket "send-event" $ \o -> SendEvent
@@ -411,6 +506,8 @@ data SnapshotEvent = SnapshotEvent
   , snapshotPmWithNick   :: Maybe T.Text
   , snapshotPmWithUserId :: Maybe UserId
   } deriving (Show)
+
+makeLensesL ''SnapshotEvent
 
 instance FromJSON SnapshotEvent where
   parseJSON = fromPacket "snapshot-event" $ \o -> SnapshotEvent

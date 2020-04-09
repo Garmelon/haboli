@@ -18,8 +18,11 @@ dependencies:
   - aeson
   - containers
   - megaparsec
+  - microlens
+  - microlens-th
   - network
   - stm
+  - template-haskell
   - text
   - time
   - transformers
